@@ -1,0 +1,35 @@
+import { HttpClient } from './http.js';
+import { CollectionsResource } from './resources/collections.js';
+
+export interface LiyaEngineOptions {
+  /** Your tenant's API key (`liya_...`). Required. */
+  apiKey: string;
+  /** Override the API host — defaults to production. Useful for local/staging. */
+  baseUrl?: string;
+  /** Per-request timeout in ms. Default 30s. */
+  timeoutMs?: number;
+  /** Retries on 429/5xx responses and network failures. Default 2. */
+  maxRetries?: number;
+  /** Inject a custom fetch implementation (tests, non-standard runtimes). */
+  fetch?: typeof fetch;
+}
+
+const DEFAULT_BASE_URL = 'https://api.liyaengine.ai';
+
+export class LiyaEngine {
+  readonly collections: CollectionsResource;
+
+  constructor(options: LiyaEngineOptions) {
+    if (!options.apiKey) {
+      throw new Error('LiyaEngine: apiKey is required.');
+    }
+    const http = new HttpClient({
+      apiKey: options.apiKey,
+      baseUrl: options.baseUrl ?? DEFAULT_BASE_URL,
+      timeoutMs: options.timeoutMs,
+      maxRetries: options.maxRetries,
+      fetch: options.fetch,
+    });
+    this.collections = new CollectionsResource(http);
+  }
+}

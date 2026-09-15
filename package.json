@@ -1,0 +1,49 @@
+{
+  "name": "@liyaengine/sdk",
+  "version": "0.1.0",
+  "description": "Official TypeScript/JavaScript client for the Liya Engine public API",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src",
+    "prepublishOnly": "npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liyaengine/liyaengine-sdk-js.git"
+  },
+  "keywords": [
+    "liyaengine",
+    "ai",
+    "sdk",
+    "client"
+  ],
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "msw": "^2.4.0",
+    "tsup": "^8.2.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  }
+}
