@@ -1,6 +1,6 @@
 {
   "name": "@liyaengine/sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Official TypeScript/JavaScript client for the Liya Engine public API",
   "license": "MIT",
   "type": "module",
@@ -31,7 +31,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/liyaengine/liyaengine-sdk-js.git"
+    "url": "git+https://github.com/liyaengine/sdk-js.git"
   },
   "keywords": [
     "liyaengine",

@@ -2,7 +2,7 @@
 
 Official TypeScript/JavaScript client for the [Liya Engine](https://liyaengine.ai) public API.
 
-> **Status: early access.** This SDK currently covers the Collections resource. More resources (Domains, Run, Agents, Workflows, Evals) ship incrementally — see [Roadmap](#roadmap).
+> **Status: early access.** This SDK currently covers Collections and Agents. More resources (Domains, Run, Workflows, Guardrail Policies, Evals) ship incrementally — see [Roadmap](#roadmap).
 
 ## Install
 
@@ -27,6 +27,25 @@ const collections = await client.collections.list();
 ```
 
 Get an API key from your [Liya Engine dashboard](https://app.liyaengine.ai) under Settings → API Keys.
+
+## Agents
+
+```ts
+const agent = await client.agents.create({
+  agent_key: 'support-triage',
+  name: 'Support Triage',
+  goal: 'Triage incoming support tickets and route them to the right team.',
+});
+
+// Agents are created in draft status — deploy to activate for execution.
+await client.agents.deploy(agent.agent_key);
+
+const result = await client.agents.run(agent.agent_key, {
+  input: { message: 'My order hasn\'t arrived yet.' },
+});
+
+const history = await client.agents.listRuns(agent.agent_key);
+```
 
 ## Error handling
 
@@ -61,10 +80,11 @@ new LiyaEngine({
 ## Roadmap
 
 - [x] Collections
+- [x] Agents (full CRUD, deploy, run, run/session history)
 - [ ] Domains (custom domain + intent CRUD)
 - [ ] Run / Run (streaming)
-- [ ] Agents
 - [ ] Workflows
+- [ ] Guardrail Policies
 - [ ] Evaluations
 
 Full docs: https://liyaengine.ai/docs/sdks/javascript
