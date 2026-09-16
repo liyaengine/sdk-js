@@ -105,31 +105,44 @@ jobs:
           cache: 'npm'
           registry-url: 'https://registry.npmjs.org'
 
-      # Read the version from package.json and check if this version was
-      # already released — makes CI re-runnable on docs-only commits.
-      - name: Check if release already exists
+      # Read the version from package.json and check, independently, whether
+      # (a) the release tag already exists and (b) this version is actually
+      # on npm. These can disagree — e.g. the tag/release gets created, then
+      # the publish step fails on auth — so a re-run must not treat "tag
+      # exists" as "npm publish also happened" or a partial-failure release
+      # becomes permanently stuck (the tag blocks re-creating the release,
+      # while nothing actually retries the publish).
+      - name: Check release + publish status
         id: version_check
         run: |
           PKG_VERSION=$(node -p "require('./package.json').version")
           echo "version=$PKG_VERSION" >> $GITHUB_OUTPUT
 
           if git ls-remote --tags origin "refs/tags/v$PKG_VERSION" | grep -q .; then
-            echo "already_released=true" >> $GITHUB_OUTPUT
-            echo "⏭️  v$PKG_VERSION tag already exists — skipping release"
+            echo "tag_exists=true" >> $GITHUB_OUTPUT
+            echo "⏭️  v$PKG_VERSION tag already exists — skipping release creation"
           else
-            echo "already_released=false" >> $GITHUB_OUTPUT
-            echo "🚀 Publishing v$PKG_VERSION"
+            echo "tag_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://registry.npmjs.org/@liyaengine/sdk/$PKG_VERSION")
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "published=true" >> $GITHUB_OUTPUT
+            echo "⏭️  $PKG_VERSION already on npm — skipping publish"
+          else
+            echo "published=false" >> $GITHUB_OUTPUT
+            echo "🚀 $PKG_VERSION not yet on npm — publishing"
           fi
 
       - name: Download dist artifact
-        if: steps.version_check.outputs.already_released == 'false'
+        if: steps.version_check.outputs.tag_exists == 'false' || steps.version_check.outputs.published == 'false'
         uses: actions/download-artifact@v4
         with:
           name: dist
           path: dist/
 
       - name: Create GitHub Release
-        if: steps.version_check.outputs.already_released == 'false'
+        if: steps.version_check.outputs.tag_exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version_check.outputs.version }}
@@ -141,7 +154,7 @@ jobs:
       # --ignore-scripts skips `prepublishOnly` (build) — dist/ is already
       # present from the artifact downloaded above.
       - name: Publish to npm
-        if: steps.version_check.outputs.already_released == 'false'
+        if: steps.version_check.outputs.published == 'false'
         run: npm publish --ignore-scripts --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
