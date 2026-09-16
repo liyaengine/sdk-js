@@ -9,3 +9,17 @@ export type {
   CollectionVisibility,
   RetrievalConfig,
 } from './resources/collections.js';
+export type {
+  Agent,
+  AgentStatus,
+  CreateAgentInput,
+  UpdateAgentInput,
+  AgentCatalogEntry,
+  RunAgentInput,
+  AgentRunResult,
+  AgentRunSummary,
+  AgentSession,
+  Pagination,
+  EffectiveAgentRuntimeConfig,
+  EffectiveConfigValue,
+} from './resources/agents.js';

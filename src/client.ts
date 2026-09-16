@@ -1,5 +1,6 @@
 import { HttpClient } from './http.js';
 import { CollectionsResource } from './resources/collections.js';
+import { AgentsResource } from './resources/agents.js';
 
 export interface LiyaEngineOptions {
   /** Your tenant's API key (`liya_...`). Required. */
@@ -18,6 +19,7 @@ const DEFAULT_BASE_URL = 'https://api.liyaengine.ai';
 
 export class LiyaEngine {
   readonly collections: CollectionsResource;
+  readonly agents: AgentsResource;
 
   constructor(options: LiyaEngineOptions) {
     if (!options.apiKey) {
@@ -31,5 +33,6 @@ export class LiyaEngine {
       fetch: options.fetch,
     });
     this.collections = new CollectionsResource(http);
+    this.agents = new AgentsResource(http);
   }
 }
