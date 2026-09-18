@@ -23,3 +23,18 @@ export type {
   EffectiveAgentRuntimeConfig,
   EffectiveConfigValue,
 } from './resources/agents.js';
+export type {
+  Workflow,
+  WorkflowStatus,
+  WorkflowStep,
+  StepType,
+  StepInput,
+  CreateWorkflowInput,
+  UpdateWorkflowInput,
+  DeployResult,
+  RotateWebhookSecretResult,
+  RunWorkflowInput,
+  WorkflowRunResult,
+  WorkflowRunSummary,
+  ListOptions,
+} from './resources/workflows.js';

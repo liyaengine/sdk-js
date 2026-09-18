@@ -2,7 +2,7 @@
 
 Official TypeScript/JavaScript client for the [Liya Engine](https://liyaengine.ai) public API.
 
-> **Status: early access.** This SDK currently covers Collections and Agents. More resources (Domains, Run, Workflows, Guardrail Policies, Evals) ship incrementally — see [Roadmap](#roadmap).
+> **Status: early access.** This SDK currently covers Collections, Agents, and Workflows. More resources (Domains, Run, Guardrail Policies, Evals) ship incrementally — see [Roadmap](#roadmap).
 
 ## Install
 
@@ -47,6 +47,34 @@ const result = await client.agents.run(agent.agent_key, {
 const history = await client.agents.listRuns(agent.agent_key);
 ```
 
+## Workflows
+
+```ts
+const workflow = await client.workflows.create({
+  name: 'Lead Intake',
+  steps: [{ step_type: 'trigger', config: { trigger_subtype: 'webhook' } }],
+});
+
+// Workflows are created in draft status — deploy to publish and make them
+// callable. Deploying a webhook-triggered workflow for the first time mints
+// its webhook secret; capture it immediately, it is never returned again.
+const { webhook_url, webhook_secret } = await client.workflows.deploy(workflow.workflow_key);
+
+// Roll the secret with a grace window so in-flight senders don't break.
+await client.workflows.rotateWebhookSecret(workflow.workflow_key, 300);
+
+// Flip a deployed workflow on/off without touching its definition.
+await client.workflows.toggle(workflow.workflow_key);
+
+const result = await client.workflows.run(workflow.workflow_key, {
+  input: { email: 'ada@example.com' },
+});
+
+const history = await client.workflows.listRuns(workflow.workflow_key);
+```
+
+> `deploy()` and `rotateWebhookSecret()` return the plaintext webhook secret exactly once. Store it immediately — subsequent reads (`get`, `list`) only ever expose `trigger_config.has_secret`.
+
 ## Error handling
 
 Every failed request throws `LiyaEngineAPIError`, a real `Error` subclass carrying the API's `code`, `message`, and HTTP `status`:
@@ -81,9 +109,9 @@ new LiyaEngine({
 
 - [x] Collections
 - [x] Agents (full CRUD, deploy, run, run/session history)
+- [x] Workflows (full CRUD, toggle, deploy, webhook secret rotate, run, run history)
 - [ ] Domains (custom domain + intent CRUD)
 - [ ] Run / Run (streaming)
-- [ ] Workflows
 - [ ] Guardrail Policies
 - [ ] Evaluations
 
