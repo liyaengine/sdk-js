@@ -2,6 +2,7 @@ import { HttpClient } from './http.js';
 import { CollectionsResource } from './resources/collections.js';
 import { AgentsResource } from './resources/agents.js';
 import { WorkflowsResource } from './resources/workflows.js';
+import { EvaluationsResource } from './resources/evaluations.js';
 
 export interface LiyaEngineOptions {
   /** Your tenant's API key (`liya_...`). Required. */
@@ -22,6 +23,7 @@ export class LiyaEngine {
   readonly collections: CollectionsResource;
   readonly agents: AgentsResource;
   readonly workflows: WorkflowsResource;
+  readonly evaluations: EvaluationsResource;
 
   constructor(options: LiyaEngineOptions) {
     if (!options.apiKey) {
@@ -37,5 +39,6 @@ export class LiyaEngine {
     this.collections = new CollectionsResource(http);
     this.agents = new AgentsResource(http);
     this.workflows = new WorkflowsResource(http);
+    this.evaluations = new EvaluationsResource(http);
   }
 }

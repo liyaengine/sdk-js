@@ -2,7 +2,7 @@
 
 Official TypeScript/JavaScript client for the [Liya Engine](https://liyaengine.ai) public API.
 
-> **Status: early access.** This SDK currently covers Collections, Agents, and Workflows. More resources (Domains, Run, Guardrail Policies, Evals) ship incrementally — see [Roadmap](#roadmap).
+> **Status: early access.** This SDK currently covers Collections, Agents, Workflows, and Evaluations. More resources (Domains, Run, Guardrail Policies) ship incrementally — see [Roadmap](#roadmap).
 
 ## Install
 
@@ -75,6 +75,39 @@ const history = await client.workflows.listRuns(workflow.workflow_key);
 
 > `deploy()` and `rotateWebhookSecret()` return the plaintext webhook secret exactly once. Store it immediately — subsequent reads (`get`, `list`) only ever expose `trigger_config.has_secret`.
 
+## Evaluations
+
+A Suite binds a Dataset to one specific intent; `suites.run()` calls that intent for real and scores what it produces. `runs.submit()`/`evaluations.score()` score a response you already generated yourself — no intent execution involved.
+
+```ts
+const dataset = await client.evaluations.datasets.create({
+  name: 'Support Replies',
+  cases: [{ input: { message: 'Where is my order?' } }],
+});
+
+const suite = await client.evaluations.suites.create({
+  name: 'Order Status Suite',
+  domain_key: 'support',
+  intent_key: 'order-status',
+  dataset_id: dataset.id,
+});
+
+// Runs are always async — poll for status/results.
+const run = await client.evaluations.suites.run(suite.id);
+const result = await client.evaluations.runs.get(run.id);
+
+// A failed run can be resumed — already-scored cases are skipped.
+await client.evaluations.runs.resume(run.id);
+
+// Score a response you already generated, no dataset/suite required.
+const scored = await client.evaluations.score({
+  input: { message: 'Where is my order?' },
+  output: 'Your order shipped yesterday and should arrive by Friday.',
+});
+```
+
+> `custom_scorer_webhook_secret` on a Suite is write-only — it's never returned; only a `custom_scorer_webhook_secret_set` boolean comes back on reads.
+
 ## Error handling
 
 Every failed request throws `LiyaEngineAPIError`, a real `Error` subclass carrying the API's `code`, `message`, and HTTP `status`:
@@ -110,10 +143,10 @@ new LiyaEngine({
 - [x] Collections
 - [x] Agents (full CRUD, deploy, run, run/session history)
 - [x] Workflows (full CRUD, toggle, deploy, webhook secret rotate, run, run history)
+- [x] Evaluations (Datasets/Cases/Suites/Runs/Reviews CRUD, suite execution, cancel/resume, statistical + pairwise compare, standalone scoring)
 - [ ] Domains (custom domain + intent CRUD)
 - [ ] Run / Run (streaming)
 - [ ] Guardrail Policies
-- [ ] Evaluations
 
 Full docs: https://liyaengine.ai/docs/sdks/javascript
 
