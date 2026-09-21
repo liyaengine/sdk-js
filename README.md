@@ -2,7 +2,7 @@
 
 Official TypeScript/JavaScript client for the [Liya Engine](https://liyaengine.ai) public API.
 
-> **Status: early access.** This SDK currently covers Collections, Agents, Workflows, and Evaluations. More resources (Domains, Run, Guardrail Policies) ship incrementally — see [Roadmap](#roadmap).
+> **Status: early access.** This SDK currently covers Domains, Intents, Collections, Agents, Workflows, and Evaluations. More resources (Run, Guardrail Policies) ship incrementally — see [Roadmap](#roadmap).
 
 ## Install
 
@@ -27,6 +27,40 @@ const collections = await client.collections.list();
 ```
 
 Get an API key from your [Liya Engine dashboard](https://app.liyaengine.ai) under Settings → API Keys.
+
+## Domains & Intents
+
+A Domain is the top-level container most tenants configure first; Intents live under it.
+
+```ts
+const domain = await client.domains.create({
+  domain_key: 'billing',
+  display_name: 'Billing',
+});
+
+const intent = await client.domains.intents.create('billing', {
+  intent_key: 'refund-status',
+  display_name: 'Refund Status',
+  prompt_template: 'You are a billing assistant. Question: {{message}}',
+});
+
+// Direct retrieval — no LLM call, useful for testing knowledge scoping.
+const { results } = await client.domains.query('billing', { query: 'refund timeline' });
+```
+
+> Basic CRUD only today — richer config (agent mode, retrieval tuning, guardrail policy attachment, prompt versioning) is still dashboard-only. `domains.update()`/`domains.intents.update()` return `{ updated: number }`, not the updated object — call `get()`/`list()` again for the fresh state. There's also no get-one-intent route; use `intents.list(domainKey)`.
+
+## Collections
+
+```ts
+await client.collections.list();
+await client.collections.get(id);
+await client.collections.create({ slug, label, domain_keys });
+await client.collections.update(id, { label, tags, visibility });
+await client.collections.delete(id);
+```
+
+Full field reference: [Collections API](/docs/api-reference/collections). Document ingestion beyond a quick file drop (`domains.uploadDocument()`) is still dashboard-only.
 
 ## Agents
 
@@ -140,13 +174,16 @@ new LiyaEngine({
 
 ## Roadmap
 
+- [x] Domains & Intents (basic CRUD, direct retrieval query, narrow document upload — richer config still dashboard-only)
 - [x] Collections
 - [x] Agents (full CRUD, deploy, run, run/session history)
 - [x] Workflows (full CRUD, toggle, deploy, webhook secret rotate, run, run history)
 - [x] Evaluations (Datasets/Cases/Suites/Runs/Reviews CRUD, suite execution, cancel/resume, statistical + pairwise compare, standalone scoring)
-- [ ] Domains (custom domain + intent CRUD)
+- [ ] Full KBaaS (document list/get/delete, async ingestion jobs + URL crawl, collection↔document/domain attach-detach, analytics)
+- [ ] Domain/Intent config parity (agent/execution/retrieval/cache config, guardrail policy attachment, versioning)
 - [ ] Run / Run (streaming)
 - [ ] Guardrail Policies
+- [ ] Prompt Studio (holding until the feature itself is committed/merged upstream)
 
 Full docs: https://liyaengine.ai/docs/sdks/javascript
 

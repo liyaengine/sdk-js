@@ -62,3 +62,17 @@ export type {
   ScoreEvalInput,
   ScoreEvalResult,
 } from './resources/evaluations.js';
+export type {
+  Domain,
+  CreateDomainInput,
+  UpdateDomainInput,
+  Intent,
+  CreateIntentInput,
+  UpdateIntentInput,
+  IntentCatalogEntry,
+  DomainSource,
+  CreateDomainSourceInput,
+  UploadedDocument,
+  QueryDomainInput,
+  QueryDomainResult,
+} from './resources/domains.js';

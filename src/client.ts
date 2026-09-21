@@ -3,6 +3,7 @@ import { CollectionsResource } from './resources/collections.js';
 import { AgentsResource } from './resources/agents.js';
 import { WorkflowsResource } from './resources/workflows.js';
 import { EvaluationsResource } from './resources/evaluations.js';
+import { DomainsResource, IntentsResource } from './resources/domains.js';
 
 export interface LiyaEngineOptions {
   /** Your tenant's API key (`liya_...`). Required. */
@@ -24,6 +25,8 @@ export class LiyaEngine {
   readonly agents: AgentsResource;
   readonly workflows: WorkflowsResource;
   readonly evaluations: EvaluationsResource;
+  readonly domains: DomainsResource;
+  readonly intents: IntentsResource;
 
   constructor(options: LiyaEngineOptions) {
     if (!options.apiKey) {
@@ -40,5 +43,7 @@ export class LiyaEngine {
     this.agents = new AgentsResource(http);
     this.workflows = new WorkflowsResource(http);
     this.evaluations = new EvaluationsResource(http);
+    this.domains = new DomainsResource(http);
+    this.intents = new IntentsResource(http);
   }
 }
