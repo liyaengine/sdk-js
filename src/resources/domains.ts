@@ -1,12 +1,26 @@
 import type { HttpClient } from '../http.js';
 
 /**
+ * A Prompt Studio library source, pinned to one exact, immutable, content-
+ * hashed version — deliberately rejects mutable aliases like "latest" or
+ * "production". Pass this instead of inline `system_prompt`/`prompt_template`
+ * text to bind to a tenant's versioned prompt library. Setting a binding
+ * server-side materializes its content into the legacy text field for
+ * backward-compatible runtime execution; editing the text field directly
+ * without touching the binding detaches it (see `create`/`update` docs
+ * below).
+ */
+export type PromptBinding =
+  | { kind: 'inline'; content: string }
+  | { kind: 'library_version'; prompt_id: string; version_id: string; content_hash: string };
+
+/**
  * Raw LiyaCustomDomain row — v1 create/update only accept the fields listed
  * on CreateDomainInput/UpdateDomainInput below, but reads return every
  * column, including some only the dashboard can currently write:
- * `status`, `guardrail_policy_id`, `prompt_binding`, `tools_config`,
- * `default_top_k`, `default_similarity_threshold`. Those are typed loosely
- * here (or omitted) since this door can't set them yet.
+ * `guardrail_policy_id`, `tools_config`, `default_top_k`,
+ * `default_similarity_threshold`. Those are typed loosely here (or omitted)
+ * since this door can't set them yet.
  */
 export interface Domain {
   id: string;
@@ -17,8 +31,11 @@ export interface Domain {
   icon: string;
   color: string;
   system_prompt: string | null;
+  prompt_binding: PromptBinding | null;
   context_enrichment_webhook_url: string | null;
   retrieval_scope: 'domain_only' | 'domain_plus_global' | 'global_only' | null;
+  /** Workflow/visibility label — independent of is_active, doesn't gate execution. */
+  status: 'draft' | 'active' | 'archived';
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -33,8 +50,11 @@ export interface CreateDomainInput {
   description?: string;
   icon?: string;
   color?: string;
+  /** Ignored if prompt_binding is also set — the binding's resolved content wins. */
   system_prompt?: string;
+  prompt_binding?: PromptBinding | null;
   context_enrichment_webhook_url?: string;
+  status?: 'draft' | 'active' | 'archived';
 }
 
 export interface UpdateDomainInput {
@@ -42,16 +62,22 @@ export interface UpdateDomainInput {
   description?: string;
   icon?: string;
   color?: string;
+  /**
+   * Editing this directly, without also passing prompt_binding, detaches
+   * any existing library binding on this domain — the server always
+   * materializes an inline text edit as a standalone value.
+   */
   system_prompt?: string;
+  /** Pass null to explicitly detach an existing binding and keep the current text as-is. */
+  prompt_binding?: PromptBinding | null;
   retrieval_scope?: 'domain_only' | 'domain_plus_global' | 'global_only';
   context_enrichment_webhook_url?: string;
+  status?: 'draft' | 'active' | 'archived';
 }
 
 /**
- * Raw LiyaCustomIntent row. `agent_config`/`execution_config`/
- * `retrieval_config`/`cache_config`/`prompt_binding`/`guardrail_policy_id`
- * are real columns but dashboard-only to write today — not yet on
- * CreateIntentInput/UpdateIntentInput.
+ * Raw LiyaCustomIntent row. `guardrail_policy_id` is a real column but
+ * dashboard-only to write today — not yet on CreateIntentInput/UpdateIntentInput.
  */
 export interface Intent {
   id: string;
@@ -61,9 +87,14 @@ export interface Intent {
   display_name: string;
   description: string | null;
   prompt_template: string;
+  prompt_binding: PromptBinding | null;
   output_schema: Record<string, unknown> | null;
   input_schema: Record<string, unknown> | null;
   guardrails_config: Record<string, unknown> | null;
+  agent_config: Record<string, unknown> | null;
+  execution_config: Record<string, unknown> | null;
+  retrieval_config: Record<string, unknown> | null;
+  cache_config: Record<string, unknown> | null;
   is_active: boolean;
   sort_order: number;
   created_at: string;
@@ -73,21 +104,47 @@ export interface Intent {
 export interface CreateIntentInput {
   intent_key: string;
   display_name: string;
-  /** The actual prompt sent to the model — required. */
-  prompt_template: string;
-  description?: string;
+  /** Required unless prompt_binding is set instead. */
+  prompt_template?: string;
+  prompt_binding?: PromptBinding | null;
+  description: string;
   output_schema?: Record<string, unknown>;
   input_schema?: Record<string, unknown>;
   guardrails_config?: Record<string, unknown>;
+  agent_config?: Record<string, unknown>;
+  execution_config?: Record<string, unknown>;
+  retrieval_config?: Record<string, unknown>;
+  cache_config?: Record<string, unknown>;
 }
 
 export interface UpdateIntentInput {
   display_name?: string;
   description?: string;
+  /** Editing this without prompt_binding detaches any existing binding — see UpdateDomainInput's identical note. */
   prompt_template?: string;
+  prompt_binding?: PromptBinding | null;
   output_schema?: Record<string, unknown>;
   input_schema?: Record<string, unknown>;
   guardrails_config?: Record<string, unknown>;
+  agent_config?: Record<string, unknown>;
+  execution_config?: Record<string, unknown>;
+  retrieval_config?: Record<string, unknown>;
+  cache_config?: Record<string, unknown>;
+  sort_order?: number;
+  /** Pass an empty string to clear an existing override. */
+  model_override?: string;
+  is_active?: boolean;
+}
+
+export interface IntentVersionSummary {
+  id: string;
+  version_number: number;
+  changed_fields: string[];
+  change_type: 'create' | 'update' | 'restore';
+  restored_from_version: number | null;
+  created_by: string | null;
+  actorName: string | null;
+  created_at: string;
 }
 
 export interface IntentCatalogEntry {
@@ -146,12 +203,49 @@ export interface QueryDomainResult {
   total: number;
 }
 
-class DomainIntentsResource {
+class DomainIntentVersionsResource {
   constructor(private readonly http: HttpClient) {}
+
+  /** Newest first, max 50. */
+  async list(domainKey: string, intentKey: string): Promise<IntentVersionSummary[]> {
+    const { versions } = await this.http.get<{ versions: IntentVersionSummary[] }>(
+      `/v1/domains/${encodeURIComponent(domainKey)}/intents/${encodeURIComponent(intentKey)}/versions`,
+    );
+    return versions;
+  }
+
+  async get(domainKey: string, intentKey: string, versionNumber: number): Promise<IntentVersionSummary & Partial<Intent>> {
+    const { version } = await this.http.get<{ version: IntentVersionSummary & Partial<Intent> }>(
+      `/v1/domains/${encodeURIComponent(domainKey)}/intents/${encodeURIComponent(intentKey)}/versions/${versionNumber}`,
+    );
+    return version;
+  }
+
+  /** Writes the version's snapshot back onto the live intent. The restore itself is versioned too. */
+  async restore(domainKey: string, intentKey: string, versionNumber: number): Promise<Intent> {
+    const { intent } = await this.http.post<{ intent: Intent }>(
+      `/v1/domains/${encodeURIComponent(domainKey)}/intents/${encodeURIComponent(intentKey)}/versions/${versionNumber}/restore`, {},
+    );
+    return intent;
+  }
+}
+
+class DomainIntentsResource {
+  readonly versions: DomainIntentVersionsResource;
+
+  constructor(private readonly http: HttpClient) {
+    this.versions = new DomainIntentVersionsResource(http);
+  }
 
   async list(domainKey: string): Promise<Intent[]> {
     const { intents } = await this.http.get<{ intents: Intent[] }>(`/v1/domains/${encodeURIComponent(domainKey)}/intents`);
     return intents;
+  }
+
+  /** No GET-single-intent route existed before this — now it does. */
+  async get(domainKey: string, intentKey: string): Promise<Intent> {
+    const { intent } = await this.http.get<{ intent: Intent }>(`/v1/domains/${encodeURIComponent(domainKey)}/intents/${encodeURIComponent(intentKey)}`);
+    return intent;
   }
 
   // /v1/domains/:key/intents predates the snake_case wire convention every
@@ -164,28 +258,40 @@ class DomainIntentsResource {
     const { intent } = await this.http.post<{ intent: Intent }>(`/v1/domains/${encodeURIComponent(domainKey)}/intents`, {
       intentKey: input.intent_key,
       displayName: input.display_name,
-      promptTemplate: input.prompt_template,
-      ...(input.description !== undefined && { description: input.description }),
+      description: input.description,
+      ...(input.prompt_template !== undefined && { promptTemplate: input.prompt_template }),
+      ...(input.prompt_binding !== undefined && { promptBinding: input.prompt_binding }),
       ...(input.output_schema !== undefined && { outputSchema: input.output_schema }),
       ...(input.input_schema !== undefined && { inputSchema: input.input_schema }),
       ...(input.guardrails_config !== undefined && { guardrailsConfig: input.guardrails_config }),
+      ...(input.agent_config !== undefined && { agentConfig: input.agent_config }),
+      ...(input.execution_config !== undefined && { executionConfig: input.execution_config }),
+      ...(input.retrieval_config !== undefined && { retrievalConfig: input.retrieval_config }),
+      ...(input.cache_config !== undefined && { cacheConfig: input.cache_config }),
     });
     return intent;
   }
 
   /**
-   * Returns `{ updated: number }`, not the updated Intent — this door has no
-   * GET-single-intent route to re-fetch from either. Call list() again if
-   * you need the fresh object.
+   * Returns `{ updated: number }`, not the updated Intent — call get() again
+   * for the fresh object.
    */
   async update(domainKey: string, intentKey: string, input: UpdateIntentInput): Promise<{ updated: number }> {
     return this.http.patch<{ updated: number }>(`/v1/domains/${encodeURIComponent(domainKey)}/intents/${encodeURIComponent(intentKey)}`, {
       ...(input.display_name !== undefined && { displayName: input.display_name }),
       ...(input.description !== undefined && { description: input.description }),
       ...(input.prompt_template !== undefined && { promptTemplate: input.prompt_template }),
+      ...(input.prompt_binding !== undefined && { promptBinding: input.prompt_binding }),
       ...(input.output_schema !== undefined && { outputSchema: input.output_schema }),
       ...(input.input_schema !== undefined && { inputSchema: input.input_schema }),
       ...(input.guardrails_config !== undefined && { guardrailsConfig: input.guardrails_config }),
+      ...(input.agent_config !== undefined && { agentConfig: input.agent_config }),
+      ...(input.execution_config !== undefined && { executionConfig: input.execution_config }),
+      ...(input.retrieval_config !== undefined && { retrievalConfig: input.retrieval_config }),
+      ...(input.cache_config !== undefined && { cacheConfig: input.cache_config }),
+      ...(input.sort_order !== undefined && { sortOrder: input.sort_order }),
+      ...(input.model_override !== undefined && { modelOverride: input.model_override }),
+      ...(input.is_active !== undefined && { isActive: input.is_active }),
     });
   }
 
@@ -216,9 +322,10 @@ class DomainSourcesResource {
 /**
  * Custom domains — the top-level container tenants configure first (system
  * prompt, retrieval scope, then intents and knowledge underneath). Mirrors
- * the full /v1/domains surface. Basic CRUD only today — agent/execution/
- * retrieval/cache config, guardrail policy attachment, and versioning are
- * still dashboard-only (no /v1 route yet).
+ * the full /v1/domains surface, including intent versioning
+ * (`intents.versions`) and the agent/execution/retrieval/cache config
+ * blobs. Guardrail policy attachment is still dashboard-only (no /v1 route
+ * for that yet — a separate resource entirely).
  */
 export class DomainsResource {
   readonly intents: DomainIntentsResource;
@@ -253,7 +360,9 @@ export class DomainsResource {
       ...(input.icon !== undefined && { icon: input.icon }),
       ...(input.color !== undefined && { color: input.color }),
       ...(input.system_prompt !== undefined && { systemPrompt: input.system_prompt }),
+      ...(input.prompt_binding !== undefined && { promptBinding: input.prompt_binding }),
       ...(input.context_enrichment_webhook_url !== undefined && { contextEnrichmentWebhookUrl: input.context_enrichment_webhook_url }),
+      ...(input.status !== undefined && { status: input.status }),
     });
     return domain;
   }
@@ -266,8 +375,10 @@ export class DomainsResource {
       ...(input.icon !== undefined && { icon: input.icon }),
       ...(input.color !== undefined && { color: input.color }),
       ...(input.system_prompt !== undefined && { systemPrompt: input.system_prompt }),
+      ...(input.prompt_binding !== undefined && { promptBinding: input.prompt_binding }),
       ...(input.retrieval_scope !== undefined && { retrievalScope: input.retrieval_scope }),
       ...(input.context_enrichment_webhook_url !== undefined && { contextEnrichmentWebhookUrl: input.context_enrichment_webhook_url }),
+      ...(input.status !== undefined && { status: input.status }),
     });
   }
 

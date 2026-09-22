@@ -63,12 +63,14 @@ export type {
   ScoreEvalResult,
 } from './resources/evaluations.js';
 export type {
+  PromptBinding,
   Domain,
   CreateDomainInput,
   UpdateDomainInput,
   Intent,
   CreateIntentInput,
   UpdateIntentInput,
+  IntentVersionSummary,
   IntentCatalogEntry,
   DomainSource,
   CreateDomainSourceInput,
