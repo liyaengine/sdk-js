@@ -8,6 +8,8 @@ export type {
   ChunkingStrategy,
   CollectionVisibility,
   RetrievalConfig,
+  CollectionAnalytics,
+  CollectionConnections,
 } from './resources/collections.js';
 export type {
   Agent,
@@ -78,3 +80,19 @@ export type {
   QueryDomainInput,
   QueryDomainResult,
 } from './resources/domains.js';
+export type {
+  Document,
+  DocumentChunk,
+  DocumentDetail,
+  UploadDocumentInput,
+  PushDocumentInput,
+  PushDocumentResult,
+  IngestionJobStatus,
+  IngestionJobRef,
+  IngestionJob,
+  IngestionJobStatusDetail,
+  CreateUrlIngestionJobInput,
+  CreateFileIngestionJobInput,
+  ListIngestionJobsInput,
+  IngestionJobsPage,
+} from './resources/documents.js';

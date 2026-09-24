@@ -6,6 +6,18 @@ import { LiyaEngineAPIError } from './errors.js';
 
 const BASE_URL = 'https://api.test.liyaengine.ai';
 
+const fixtureDocument = {
+  id: 'doc_123',
+  name: 'faq.txt',
+  category: 'faq',
+  chunks: 3,
+  sizeKb: 2,
+  embeddingModel: 'text-embedding-3-small',
+  uploadedBy: 'user_1',
+  uploadedAt: '2026-01-01T00:00:00.000Z',
+  collections: [],
+};
+
 const fixtureCollection = {
   id: 'col_123',
   slug: 'contracts',
@@ -54,6 +66,39 @@ const server = setupServer(
     return HttpResponse.json({ success: true, data: { collection: { ...fixtureCollection, ...body } } });
   }),
   http.delete(`${BASE_URL}/v1/collections/:id`, () => HttpResponse.json({ success: true })),
+
+  http.post(`${BASE_URL}/v1/collections/col_123/domains/legal-ops`, () => HttpResponse.json({ success: true })),
+  http.delete(`${BASE_URL}/v1/collections/col_123/domains/legal-ops`, () => HttpResponse.json({ success: true })),
+  http.get(`${BASE_URL}/v1/collections/col_123/documents`, () =>
+    HttpResponse.json({ success: true, data: { documents: [fixtureDocument], total: 1 } }),
+  ),
+  http.post(`${BASE_URL}/v1/collections/col_123/documents/doc_123`, () => HttpResponse.json({ success: true })),
+  http.delete(`${BASE_URL}/v1/collections/col_123/documents/doc_123`, () => HttpResponse.json({ success: true })),
+  http.get(`${BASE_URL}/v1/collections/col_123/analytics`, () =>
+    HttpResponse.json({
+      success: true,
+      data: {
+        sources: 4,
+        documents: 4,
+        chunks: 42,
+        storage_kb: 128,
+        embedding_model: 'text-embedding-3-small',
+        indexed: true,
+        last_synced_at: '2026-01-01T00:00:00.000Z',
+      },
+    }),
+  ),
+  http.get(`${BASE_URL}/v1/collections/col_123/connections`, () =>
+    HttpResponse.json({
+      success: true,
+      data: {
+        domains: [{ domain_key: 'legal-ops', display_name: 'Legal Ops' }],
+        intents: [{ intent_key: 'review-contract', domain_key: 'legal-ops', display_name: 'Review Contract' }],
+        agents: [{ id: 'agent_1', name: 'Contract Bot', via: 'legal-ops' }],
+        workflows: null,
+      },
+    }),
+  ),
 );
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
@@ -131,5 +176,38 @@ describe('collections.update', () => {
 describe('collections.delete', () => {
   it('resolves without throwing', async () => {
     await expect(client().collections.delete('col_123')).resolves.toBeUndefined();
+  });
+});
+
+describe('collections.domains', () => {
+  it('attaches and detaches a domain', async () => {
+    await expect(client().collections.domains.attach('col_123', 'legal-ops')).resolves.toBeUndefined();
+    await expect(client().collections.domains.detach('col_123', 'legal-ops')).resolves.toBeUndefined();
+  });
+});
+
+describe('collections.documents', () => {
+  it('lists, attaches, and detaches a document', async () => {
+    const documents = await client().collections.documents.list('col_123');
+    expect(documents).toEqual([fixtureDocument]);
+
+    await expect(client().collections.documents.attach('col_123', 'doc_123')).resolves.toBeUndefined();
+    await expect(client().collections.documents.detach('col_123', 'doc_123')).resolves.toBeUndefined();
+  });
+});
+
+describe('collections.analytics', () => {
+  it('returns live aggregated stats', async () => {
+    const analytics = await client().collections.analytics('col_123');
+    expect(analytics).toMatchObject({ sources: 4, documents: 4, chunks: 42, indexed: true });
+  });
+});
+
+describe('collections.connections', () => {
+  it('returns domains/intents/agents, and a real null for workflows', async () => {
+    const connections = await client().collections.connections('col_123');
+    expect(connections.domains).toEqual([{ domain_key: 'legal-ops', display_name: 'Legal Ops' }]);
+    expect(connections.agents).toHaveLength(1);
+    expect(connections.workflows).toBeNull();
   });
 });

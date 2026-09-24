@@ -67,9 +67,63 @@ await client.collections.get(id);
 await client.collections.create({ slug, label, domain_keys });
 await client.collections.update(id, { label, tags, visibility });
 await client.collections.delete(id);
+
+// Reference documents into a collection — never copies them, never touches embeddings.
+await client.collections.documents.attach(collectionId, documentId);
+await client.collections.documents.list(collectionId);
+await client.collections.documents.detach(collectionId, documentId);
+
+// Scope a collection's knowledge to a domain.
+await client.collections.domains.attach(collectionId, 'legal-ops');
+await client.collections.domains.detach(collectionId, 'legal-ops');
+
+// Live aggregation — no rollup table, always reflects current state.
+const stats = await client.collections.analytics(collectionId);
+
+// What references this collection — domains, intents, agents (indirect via
+// domain). `workflows` is always null: no workflow↔collection link exists.
+const refs = await client.collections.connections(collectionId);
 ```
 
-Full field reference: [Collections API](/docs/api-reference/collections). Document ingestion beyond a quick file drop (`domains.uploadDocument()`) is still dashboard-only.
+Full field reference: [Collections API](/docs/api-reference/collections).
+
+## Documents
+
+The tenant-wide knowledge pool collections reference (a document can belong to zero, one, or many collections — attaching never copies it or touches its embeddings).
+
+```ts
+await client.documents.list();
+const doc = await client.documents.get(id); // includes the full chunkList
+await client.documents.delete(id);
+
+// Synchronous — blocks until extraction/chunking/embedding finishes. If
+// collectionIds names exactly one collection, that collection's own
+// chunking/embedding defaults pre-fill the upload.
+const uploaded = await client.documents.upload({
+  fileBase64: '...',
+  fileName: 'refund-policy.pdf',
+  category: 'policy',
+  collectionIds: [collectionId],
+});
+
+// Push a URL or inline content — upserts by a deterministic source_id.
+await client.documents.push({ url: 'https://example.com/faq', title: 'FAQ' });
+```
+
+> Unlike `list()`/`get()`, `upload()`'s response has no `uploadedBy` field — a real, pre-existing API asymmetry, not an SDK gap. Call `get(id)` afterward if you need it.
+
+For large files or a multi-page crawl, use the async job queue instead — it returns immediately and you poll for completion:
+
+```ts
+const { jobId } = await client.documents.jobs.createUrlJob({ url: 'https://example.com', depth: 2 });
+// ...or: await client.documents.jobs.createFileJob({ fileBase64, fileName });
+
+const status = await client.documents.jobs.get(jobId); // pending | running | completed | failed | cancelled
+await client.documents.jobs.list({ status: 'running' });
+await client.documents.jobs.cancel(jobId);
+```
+
+> Cancellation is cooperative (checked between page fetches / chunk embeds), not instant, and there is no crash-recovery sweep — if the process running a job restarts mid-run, the job is left "running" indefinitely rather than auto-retried. Poll `get(jobId)` for terminal status; don't assume `cancel()` stops it immediately.
 
 ## Agents
 
@@ -188,7 +242,8 @@ new LiyaEngine({
 - [x] Agents (full CRUD, deploy, run, run/session history)
 - [x] Workflows (full CRUD, toggle, deploy, webhook secret rotate, run, run history)
 - [x] Evaluations (Datasets/Cases/Suites/Runs/Reviews CRUD, suite execution, cancel/resume, statistical + pairwise compare, standalone scoring)
-- [ ] Full KBaaS (document list/get/delete, async ingestion jobs + URL crawl, collection↔document/domain attach-detach, analytics)
+- [x] Full KBaaS (document list/get/delete/upload/push, async ingestion jobs + URL crawl, collection↔document/domain attach-detach, analytics/connections)
+- [ ] Flagged-chunk review
 - [ ] Run / Run (streaming)
 - [ ] Guardrail Policies
 - [ ] Prompt Studio (holding until the feature itself is committed/merged upstream)
