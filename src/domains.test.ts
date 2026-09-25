@@ -134,6 +134,46 @@ const server = setupServer(
     const sse = frames.map(f => `data: ${JSON.stringify(f)}\n\n`).join('');
     return new HttpResponse(sse, { headers: { 'Content-Type': 'text/event-stream' } });
   }),
+
+  http.get(`${BASE_URL}/v1/domains/shipping-support/tools`, () =>
+    HttpResponse.json({
+      success: true,
+      data: {
+        platform_tools: [{ name: 'document_search', description: 'Search the knowledge base', enabled: true }],
+        custom_tools: [{
+          name: 'lookup_order', display_name: 'Order Lookup', description: 'Looks up a real order by number',
+          endpoint_url: 'https://fernbankoutdoor.com/api/liya-tools/lookup-order', auth_type: 'api_key', auth_configured: true,
+        }],
+        web_search_configured: false,
+      },
+    }),
+  ),
+  http.patch(`${BASE_URL}/v1/domains/shipping-support/tools`, async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    return HttpResponse.json({
+      success: true,
+      data: {
+        tools_config: {
+          enabled_platform_tools: body.enabled_platform_tools ?? [],
+          custom_tools: [{
+            name: 'lookup_order', display_name: 'Order Lookup', description: 'Looks up a real order by number',
+            endpoint_url: 'https://fernbankoutdoor.com/api/liya-tools/lookup-order', auth_type: 'api_key', auth_configured: true,
+          }],
+          web_search_configured: false,
+        },
+      },
+    });
+  }),
+  http.post(`${BASE_URL}/v1/domains/shipping-support/tools/test`, async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    if (body.tool_name === 'does-not-exist') {
+      return HttpResponse.json({ success: false, error: { code: 'TOOL_NOT_FOUND', message: "Custom tool 'does-not-exist' not found." } }, { status: 404 });
+    }
+    return HttpResponse.json({
+      success: true,
+      data: { status_code: 200, ok: true, body: { order_status: 'shipped', eta_days: 2 }, latency_ms: 42 },
+    });
+  }),
 );
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
@@ -276,5 +316,35 @@ describe('intents.stream', () => {
       }
     }).rejects.toMatchObject({ name: 'LiyaEngineAPIError', code: 'STREAMING_NOT_SUPPORTED', status: 400 });
     expect(events).toHaveLength(0);
+  });
+});
+
+describe('domains.tools', () => {
+  it('gets the tool catalog — custom tools masked, no auth_value', async () => {
+    const config = await client().domains.tools.get('shipping-support');
+    expect(config.platform_tools[0].name).toBe('document_search');
+    expect(config.custom_tools[0].auth_configured).toBe(true);
+    expect(config.custom_tools[0]).not.toHaveProperty('auth_value');
+  });
+
+  it('updates the tool catalog, replacing custom_tools', async () => {
+    const { tools_config } = await client().domains.tools.update('shipping-support', {
+      custom_tools: [{
+        name: 'lookup_order', display_name: 'Order Lookup', description: 'Looks up a real order by number',
+        endpoint_url: 'https://fernbankoutdoor.com/api/liya-tools/lookup-order', auth_type: 'api_key', auth_value: 'sk_live_...',
+      }],
+    });
+    expect(tools_config.custom_tools[0].name).toBe('lookup_order');
+  });
+
+  it('dispatches a real request via test() and returns the endpoint response', async () => {
+    const result = await client().domains.tools.test('shipping-support', 'lookup_order', { order_number: 'A1092' });
+    expect(result).toEqual({ status_code: 200, ok: true, body: { order_status: 'shipped', eta_days: 2 }, latency_ms: 42 });
+  });
+
+  it('throws a typed LiyaEngineAPIError for an unknown tool name', async () => {
+    await expect(client().domains.tools.test('shipping-support', 'does-not-exist')).rejects.toMatchObject({
+      name: 'LiyaEngineAPIError', code: 'TOOL_NOT_FOUND', status: 404,
+    });
   });
 });

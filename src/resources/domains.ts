@@ -1,6 +1,7 @@
 import type { HttpClient } from '../http.js';
 import type { RunIntentInput, RunIntentResult, RunStreamEvent } from './run.js';
 import { translateRunInput } from './run.js';
+import { DomainToolsResource } from './domainTools.js';
 
 /**
  * A Prompt Studio library source, pinned to one exact, immutable, content-
@@ -325,17 +326,21 @@ class DomainSourcesResource {
  * Custom domains — the top-level container tenants configure first (system
  * prompt, retrieval scope, then intents and knowledge underneath). Mirrors
  * the full /v1/domains surface, including intent versioning
- * (`intents.versions`) and the agent/execution/retrieval/cache config
- * blobs. Guardrail policy attachment is still dashboard-only (no /v1 route
+ * (`intents.versions`), the agent/execution/retrieval/cache config blobs,
+ * and a domain's agentic tool definitions (`domains.tools`) — the custom
+ * webhooks an agent-mode intent's `agent_config.tools[]` references by
+ * name. Guardrail policy attachment is still dashboard-only (no /v1 route
  * for that yet — a separate resource entirely).
  */
 export class DomainsResource {
   readonly intents: DomainIntentsResource;
   readonly sources: DomainSourcesResource;
+  readonly tools: DomainToolsResource;
 
   constructor(private readonly http: HttpClient) {
     this.intents = new DomainIntentsResource(http);
     this.sources = new DomainSourcesResource(http);
+    this.tools = new DomainToolsResource(http);
   }
 
   async list(): Promise<Domain[]> {

@@ -107,3 +107,11 @@ export type {
   StandardRunData,
   RunStreamEvent,
 } from './resources/run.js';
+export type {
+  PlatformTool,
+  CustomToolInput,
+  MaskedCustomTool,
+  DomainToolsConfig,
+  UpdateDomainToolsInput,
+  TestDomainToolResult,
+} from './resources/domainTools.js';
