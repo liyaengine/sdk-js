@@ -10,6 +10,7 @@ export type {
   RetrievalConfig,
   CollectionAnalytics,
   CollectionConnections,
+  CollectionDocumentSummary,
 } from './resources/collections.js';
 export type {
   Agent,
@@ -96,3 +97,13 @@ export type {
   ListIngestionJobsInput,
   IngestionJobsPage,
 } from './resources/documents.js';
+export type {
+  RunPack,
+  RunIntentInput,
+  RunIntentResult,
+  RunMeta,
+  RunUsage,
+  ChatRunData,
+  StandardRunData,
+  RunStreamEvent,
+} from './resources/run.js';

@@ -1,4 +1,6 @@
 import type { HttpClient } from '../http.js';
+import type { RunIntentInput, RunIntentResult, RunStreamEvent } from './run.js';
+import { translateRunInput } from './run.js';
 
 /**
  * A Prompt Studio library source, pinned to one exact, immutable, content-
@@ -414,8 +416,10 @@ export class DomainsResource {
 
 /**
  * Flat intent catalog — cuts across every custom domain, for external
- * discovery (mirrors the dashboard's API Explorer page). Read-only; create/
- * update/delete an intent via `client.domains.intents`.
+ * discovery (mirrors the dashboard's API Explorer page) — plus `run()`/
+ * `stream()`, the primary way to actually invoke LiyaEngine: list what you
+ * can run here, run it below. Create/update/delete an intent via
+ * `client.domains.intents` instead — this resource doesn't own that.
  */
 export class IntentsResource {
   constructor(private readonly http: HttpClient) {}
@@ -423,5 +427,31 @@ export class IntentsResource {
   async listAll(): Promise<IntentCatalogEntry[]> {
     const { intents } = await this.http.get<{ intents: IntentCatalogEntry[]; total: number }>('/v1/intents');
     return intents;
+  }
+
+  /**
+   * Run any intent — built-in pack or custom domain — and get one JSON
+   * response back. This is the endpoint every other execution path
+   * (`agents.run()`, a domain's public `/v1/{domain}/{intent}` route)
+   * ultimately reaches; call this directly when you don't need an Agent's
+   * multi-turn orchestration on top.
+   */
+  async run(input: RunIntentInput): Promise<RunIntentResult> {
+    return this.http.postEnvelope<RunIntentResult>('/v1/run', translateRunInput(input));
+  }
+
+  /**
+   * Same request shape as `run()`, delivered as a token-by-token stream
+   * instead of one response — iterate with `for await`.
+   *
+   * Built-in packs only (chat, hiring, fintech, healthcare, ehs,
+   * compliance). A custom-domain intent throws a LiyaEngineAPIError
+   * (`STREAMING_NOT_SUPPORTED`) immediately, before the stream opens — use
+   * `run()` for those. Once the stream *has* opened, every other failure
+   * (quota, provider error) arrives as an in-band `{type:'error'}` event,
+   * not a thrown error — always check `event.type` in your loop.
+   */
+  stream(input: RunIntentInput): AsyncGenerator<RunStreamEvent, void, undefined> {
+    return this.http.stream<RunStreamEvent>('/v1/run/stream', translateRunInput(input));
   }
 }

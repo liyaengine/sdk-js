@@ -6,16 +6,15 @@ import { LiyaEngineAPIError } from './errors.js';
 
 const BASE_URL = 'https://api.test.liyaengine.ai';
 
-const fixtureDocument = {
+// GET /v1/collections/:id/documents returns this narrower shape, not a full
+// Document — confirmed against collectionAttachmentService.ts.
+const fixtureCollectionDocumentSummary = {
   id: 'doc_123',
   name: 'faq.txt',
-  category: 'faq',
   chunks: 3,
   sizeKb: 2,
   embeddingModel: 'text-embedding-3-small',
-  uploadedBy: 'user_1',
   uploadedAt: '2026-01-01T00:00:00.000Z',
-  collections: [],
 };
 
 const fixtureCollection = {
@@ -70,7 +69,7 @@ const server = setupServer(
   http.post(`${BASE_URL}/v1/collections/col_123/domains/legal-ops`, () => HttpResponse.json({ success: true })),
   http.delete(`${BASE_URL}/v1/collections/col_123/domains/legal-ops`, () => HttpResponse.json({ success: true })),
   http.get(`${BASE_URL}/v1/collections/col_123/documents`, () =>
-    HttpResponse.json({ success: true, data: { documents: [fixtureDocument], total: 1 } }),
+    HttpResponse.json({ success: true, data: { documents: [fixtureCollectionDocumentSummary], total: 1 } }),
   ),
   http.post(`${BASE_URL}/v1/collections/col_123/documents/doc_123`, () => HttpResponse.json({ success: true })),
   http.delete(`${BASE_URL}/v1/collections/col_123/documents/doc_123`, () => HttpResponse.json({ success: true })),
@@ -189,7 +188,7 @@ describe('collections.domains', () => {
 describe('collections.documents', () => {
   it('lists, attaches, and detaches a document', async () => {
     const documents = await client().collections.documents.list('col_123');
-    expect(documents).toEqual([fixtureDocument]);
+    expect(documents).toEqual([fixtureCollectionDocumentSummary]);
 
     await expect(client().collections.documents.attach('col_123', 'doc_123')).resolves.toBeUndefined();
     await expect(client().collections.documents.detach('col_123', 'doc_123')).resolves.toBeUndefined();

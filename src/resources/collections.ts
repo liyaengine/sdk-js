@@ -1,5 +1,4 @@
 import type { HttpClient } from '../http.js';
-import type { Document } from './documents.js';
 
 export type ChunkingStrategy = 'fixed' | 'semantic' | 'sliding_window';
 export type CollectionVisibility = 'workspace' | 'restricted';
@@ -83,11 +82,26 @@ class CollectionDomainsResource {
   }
 }
 
+/**
+ * The shape `GET /v1/collections/{id}/documents` actually returns — a real,
+ * pre-existing backend asymmetry, not the full `Document` type. No
+ * `category`, `uploadedBy`, or `collections` field; confirmed against
+ * `collectionAttachmentService.ts#listCollectionDocuments()`.
+ */
+export interface CollectionDocumentSummary {
+  id: string;
+  name: string;
+  chunks: number;
+  sizeKb: number;
+  embeddingModel: string | null;
+  uploadedAt: string;
+}
+
 class CollectionDocumentsResource {
   constructor(private readonly http: HttpClient) {}
 
-  async list(collectionId: string): Promise<Document[]> {
-    const { documents } = await this.http.get<{ documents: Document[]; total: number }>(`/v1/collections/${encodeURIComponent(collectionId)}/documents`);
+  async list(collectionId: string): Promise<CollectionDocumentSummary[]> {
+    const { documents } = await this.http.get<{ documents: CollectionDocumentSummary[]; total: number }>(`/v1/collections/${encodeURIComponent(collectionId)}/documents`);
     return documents;
   }
 

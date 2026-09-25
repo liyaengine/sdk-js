@@ -47,7 +47,8 @@ export class HttpClient {
     this.fetchImpl = options.fetch ?? globalThis.fetch;
   }
 
-  async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  /** Shared fetch/retry/error-envelope core — returns the parsed body as-is (past the success check), not unwrapped to `.data`. Almost every endpoint wants `request()` below instead. */
+  private async requestEnvelope<T>(method: string, path: string, body?: unknown): Promise<T> {
     let lastError: unknown;
 
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
@@ -72,7 +73,7 @@ export class HttpClient {
           continue;
         }
 
-        let json: SuccessEnvelope<T> | ErrorEnvelope;
+        let json: (T & { success: true }) | ErrorEnvelope;
         try {
           json = await res.json();
         } catch (parseErr) {
@@ -82,7 +83,7 @@ export class HttpClient {
         if (!json.success) {
           throw new LiyaEngineAPIError(res.status, json.error.code, json.error.message, json.error.details);
         }
-        return json.data;
+        return json;
       } catch (err) {
         clearTimeout(timer);
         if (err instanceof LiyaEngineAPIError) throw err;
@@ -101,6 +102,11 @@ export class HttpClient {
     throw lastError instanceof Error ? lastError : new LiyaEngineNetworkError('Request failed');
   }
 
+  async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const json = await this.requestEnvelope<SuccessEnvelope<T>>(method, path, body);
+    return json.data;
+  }
+
   get<T>(path: string): Promise<T> {
     return this.request<T>('GET', path);
   }
@@ -112,5 +118,84 @@ export class HttpClient {
   }
   delete<T>(path: string): Promise<T> {
     return this.request<T>('DELETE', path);
+  }
+
+  /**
+   * For the rare endpoint whose envelope has extra top-level sibling fields
+   * beyond `{success, data}` (today: only `POST /v1/run`, which also returns
+   * sibling `metadata`/`usage`) — returns the parsed body as-is, past the
+   * standard success/error check, instead of unwrapping to just `.data`.
+   */
+  postEnvelope<T>(path: string, body?: unknown): Promise<T> {
+    return this.requestEnvelope<T>('POST', path, body);
+  }
+
+  /**
+   * Streams `POST {path}` as server-sent events, yielding each parsed
+   * `data: {...}` frame in order. No retries — a stream is a single
+   * long-lived attempt, not a single request with a bounded response the
+   * usual retry-with-backoff logic can safely redo. No timeoutMs either:
+   * this is a token-by-token stream of unbounded duration, not a single
+   * fetch race against a fixed deadline.
+   *
+   * A rejection *before* the stream opens (missing field, plan gate) arrives
+   * as a normal `{success:false,error}` JSON body over a non-2xx status —
+   * thrown as a LiyaEngineAPIError, exactly like `request()`. Once the
+   * stream has opened, every subsequent failure arrives in-band as a frame
+   * with the caller's own `type` field (e.g. `'error'`) — this method has no
+   * opinion on frame shape, callers discriminate by whatever `type` values
+   * that specific endpoint documents.
+   */
+  async *stream<T extends { type: string }>(path: string, body?: unknown): AsyncGenerator<T, void, undefined> {
+    const res = await this.fetchImpl(`${this.baseUrl}${path}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+
+    const contentType = res.headers.get('content-type') ?? '';
+    if (!contentType.includes('text/event-stream')) {
+      // A pre-flight rejection — the normal {success,error} envelope, not SSE.
+      let json: ErrorEnvelope | Record<string, unknown>;
+      try {
+        json = await res.json();
+      } catch (parseErr) {
+        throw new LiyaEngineNetworkError(`Invalid JSON response (status ${res.status})`, parseErr);
+      }
+      if ((json as ErrorEnvelope).success === false) {
+        const { code, message, details } = (json as ErrorEnvelope).error;
+        throw new LiyaEngineAPIError(res.status, code, message, details);
+      }
+      throw new LiyaEngineNetworkError(`Unexpected non-streaming response (status ${res.status})`);
+    }
+
+    if (!res.body) {
+      throw new LiyaEngineNetworkError('Streaming response had no body');
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        let frameEnd: number;
+        while ((frameEnd = buffer.indexOf('\n\n')) !== -1) {
+          const frame = buffer.slice(0, frameEnd);
+          buffer = buffer.slice(frameEnd + 2);
+          const dataLine = frame.split('\n').find(line => line.startsWith('data: '));
+          if (!dataLine) continue;
+          yield JSON.parse(dataLine.slice('data: '.length)) as T;
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
   }
 }

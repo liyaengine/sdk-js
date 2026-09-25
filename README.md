@@ -59,6 +59,34 @@ const { results } = await client.domains.query('billing', { query: 'refund timel
 
 > `domains.update()`/`domains.intents.update()` return `{ updated: number }`, not the updated object — call `get()`/`list()` again for the fresh state. Guardrail policy attachment is still dashboard-only (a separate resource with no `/v1` route yet). To bind an intent's prompt to a Prompt Studio library version instead of inline text, pass `prompt_binding: { kind: 'library_version', prompt_id, version_id, content_hash }` in place of `prompt_template` — editing `prompt_template` directly afterward without also passing `prompt_binding` silently detaches the binding.
 
+## Run
+
+The primary way to actually invoke an intent — built-in pack or custom domain — and get a real, LLM-generated response back. `agents.run()` and a domain's public `/v1/{domain}/{intent}` route both reach this same endpoint under the hood; call it directly when you don't need an Agent's multi-turn orchestration on top.
+
+```ts
+const result = await client.intents.run({
+  domain: 'billing',
+  intent: 'refund-status',
+  message: 'How long do refunds take?',
+});
+
+console.log(result.data);     // ChatRunData | StandardRunData, depending on domain
+console.log(result.metadata); // { model_used, tokens_used, cost_usd, latency_ms, cached, ... }
+console.log(result.usage);    // { requests_remaining, tokens_remaining, ... }
+```
+
+Or stream it token by token:
+
+```ts
+for await (const event of client.intents.stream({ domain: 'billing', intent: 'refund-status', message: 'How long do refunds take?' })) {
+  if (event.type === 'token') process.stdout.write(event.delta);
+  if (event.type === 'done') console.log('\n', event.session_id, event.cost_usd);
+  if (event.type === 'error') throw new Error(event.message);
+}
+```
+
+> **Streaming is built-in-packs only** (`chat`, `hiring`, `fintech`, `healthcare`, `ehs`, `compliance`) — a custom-domain intent throws a `LiyaEngineAPIError` (`STREAMING_NOT_SUPPORTED`) immediately, before the stream opens; use `run()` instead for those. Once a stream *has* opened, every other failure (quota exceeded, provider error) arrives as an in-band `{type:'error'}` event, not a thrown error — always check `event.type` in your loop, not just try/catch. Neither method defaults `domain` sensibly if you omit both `domain` and `pack` — it falls back to `'hiring'`, a historical default carried over from the API itself — pass one explicitly.
+
 ## Collections
 
 ```ts
@@ -70,7 +98,7 @@ await client.collections.delete(id);
 
 // Reference documents into a collection — never copies them, never touches embeddings.
 await client.collections.documents.attach(collectionId, documentId);
-await client.collections.documents.list(collectionId);
+await client.collections.documents.list(collectionId); // returns CollectionDocumentSummary[], a narrower shape than Document — see below
 await client.collections.documents.detach(collectionId, documentId);
 
 // Scope a collection's knowledge to a domain.
@@ -110,7 +138,7 @@ const uploaded = await client.documents.upload({
 await client.documents.push({ url: 'https://example.com/faq', title: 'FAQ' });
 ```
 
-> Unlike `list()`/`get()`, `upload()`'s response has no `uploadedBy` field — a real, pre-existing API asymmetry, not an SDK gap. Call `get(id)` afterward if you need it.
+> Unlike `list()`/`get()`, `upload()`'s response has no `uploadedBy` field — a real, pre-existing API asymmetry, not an SDK gap. Call `get(id)` afterward if you need it. Similarly, `collections.documents.list()` returns `CollectionDocumentSummary` (`id`/`name`/`chunks`/`sizeKb`/`embeddingModel`/`uploadedAt` only) rather than a full `Document` — no `category`, `uploadedBy`, or `collections` field; call `documents.get(id)` for the complete record.
 
 For large files or a multi-page crawl, use the async job queue instead — it returns immediately and you poll for completion:
 
@@ -243,8 +271,8 @@ new LiyaEngine({
 - [x] Workflows (full CRUD, toggle, deploy, webhook secret rotate, run, run history)
 - [x] Evaluations (Datasets/Cases/Suites/Runs/Reviews CRUD, suite execution, cancel/resume, statistical + pairwise compare, standalone scoring)
 - [x] Full KBaaS (document list/get/delete/upload/push, async ingestion jobs + URL crawl, collection↔document/domain attach-detach, analytics/connections)
+- [x] Run / Run (streaming) — built-in packs only for streaming; custom domains use non-streaming `run()`
 - [ ] Flagged-chunk review
-- [ ] Run / Run (streaming)
 - [ ] Guardrail Policies
 - [ ] Prompt Studio (holding until the feature itself is committed/merged upstream)
 

@@ -95,6 +95,45 @@ const server = setupServer(
       data: { intents: [{ domain: 'billing', domainLabel: 'Billing', intent: 'refund-status', displayName: 'Refund Status', description: null, endpoint: '/v1/billing/refund-status', method: 'POST', inputSchema: {}, outputSchema: null }], total: 1 },
     }),
   ),
+
+  http.post(`${BASE_URL}/v1/run`, async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    if (body.domain === 'chat') {
+      return HttpResponse.json({
+        success: true,
+        data: {
+          response: { content: 'Refunds take 5-7 days.', intent: 'answer_question', confidence: 0.92, sources: [], metadata: { guardrails_passed: true, grounding_verified: true, flags: [] } },
+          session: { id: 'sess_1', turns: 1, memory_updated: true },
+          execution: { steps: 3, latency_ms: 412, retrieval_ms: 80 },
+        },
+        metadata: { intent: 'answer_question', domain: 'chat', model_used: 'gpt-4o-mini', tokens_used: 120, cost_usd: 0.0012, latency_ms: 412, cached: false },
+        usage: { requests_used: 11, tokens_used: 4820, requests_remaining: 989, tokens_remaining: 244_958 },
+      });
+    }
+    return HttpResponse.json({
+      success: true,
+      data: { output: { answer: 'Refunds take 5-7 days.' }, session_id: 'sess_2', message_id: 'msg_1' },
+      metadata: { intent: 'refund-status', domain: 'billing', model_used: 'gpt-4o-mini', tokens_used: 88, cost_usd: 0.0008, latency_ms: 301, cached: false },
+      usage: { requests_used: 12, tokens_used: 4908, requests_remaining: 988, tokens_remaining: 244_870 },
+    });
+  }),
+
+  http.post(`${BASE_URL}/v1/run/stream`, async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    if (!body.intent) {
+      return HttpResponse.json({ success: false, error: { code: 'INVALID_INPUT', message: 'Missing required field: intent' } }, { status: 400 });
+    }
+    if (body.domain && body.domain !== 'chat' && body.domain !== 'hiring') {
+      return HttpResponse.json({ success: false, error: { code: 'STREAMING_NOT_SUPPORTED', message: 'Streaming is only supported for built-in packs today.' } }, { status: 400 });
+    }
+    const frames = [
+      { type: 'token', delta: 'Refunds ' },
+      { type: 'token', delta: 'take 5-7 days.' },
+      { type: 'done', session_id: 'sess_3', latency_ms: 300, input_tokens: 40, output_tokens: 12, cost_usd: 0.0005, served_by: 'platform' },
+    ];
+    const sse = frames.map(f => `data: ${JSON.stringify(f)}\n\n`).join('');
+    return new HttpResponse(sse, { headers: { 'Content-Type': 'text/event-stream' } });
+  }),
 );
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
@@ -196,5 +235,46 @@ describe('intents.listAll', () => {
     const catalog = await client().intents.listAll();
     expect(catalog).toHaveLength(1);
     expect(catalog[0].domain).toBe('billing');
+  });
+});
+
+describe('intents.run', () => {
+  it('returns the full envelope — data, metadata, and usage as siblings, not just data', async () => {
+    const result = await client().intents.run({ domain: 'billing', intent: 'refund-status', message: 'How long do refunds take?' });
+    expect(result.data).toEqual({ output: { answer: 'Refunds take 5-7 days.' }, session_id: 'sess_2', message_id: 'msg_1' });
+    expect(result.metadata).toMatchObject({ model_used: 'gpt-4o-mini', tokens_used: 88 });
+    expect(result.usage).toMatchObject({ requests_remaining: 988 });
+  });
+
+  it('returns ChatRunData-shaped data for the chat domain', async () => {
+    const result = await client().intents.run({ domain: 'chat', intent: 'answer_question', message: 'hi' });
+    expect(result.data).toHaveProperty('response.content', 'Refunds take 5-7 days.');
+    expect(result.data).toHaveProperty('session.id', 'sess_1');
+  });
+});
+
+describe('intents.stream', () => {
+  it('yields token frames in order, ending with a done frame', async () => {
+    const events = [];
+    for await (const event of client().intents.stream({ domain: 'chat', intent: 'answer_question', message: 'hi' })) {
+      events.push(event);
+    }
+    expect(events).toEqual([
+      { type: 'token', delta: 'Refunds ' },
+      { type: 'token', delta: 'take 5-7 days.' },
+      { type: 'done', session_id: 'sess_3', latency_ms: 300, input_tokens: 40, output_tokens: 12, cost_usd: 0.0005, served_by: 'platform' },
+    ]);
+  });
+
+  it('throws a typed LiyaEngineAPIError for a pre-flight rejection (custom domain), without yielding any events', async () => {
+    const events = [];
+    await expect(async () => {
+      for (;;) {
+        const { value, done } = await client().intents.stream({ domain: 'legal-ops', intent: 'review-contract' }).next();
+        if (done) break;
+        events.push(value);
+      }
+    }).rejects.toMatchObject({ name: 'LiyaEngineAPIError', code: 'STREAMING_NOT_SUPPORTED', status: 400 });
+    expect(events).toHaveLength(0);
   });
 });
