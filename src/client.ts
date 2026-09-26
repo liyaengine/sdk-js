@@ -6,6 +6,7 @@ import { EvaluationsResource } from './resources/evaluations.js';
 import { DomainsResource, IntentsResource } from './resources/domains.js';
 import { DocumentsResource } from './resources/documents.js';
 import { GuardrailPoliciesResource } from './resources/guardrailPolicies.js';
+import { PromptsResource } from './resources/prompts.js';
 
 export interface LiyaEngineOptions {
   /** Your tenant's API key (`liya_...`). Required. */
@@ -31,6 +32,7 @@ export class LiyaEngine {
   readonly intents: IntentsResource;
   readonly documents: DocumentsResource;
   readonly guardrailPolicies: GuardrailPoliciesResource;
+  readonly prompts: PromptsResource;
 
   constructor(options: LiyaEngineOptions) {
     if (!options.apiKey) {
@@ -51,5 +53,6 @@ export class LiyaEngine {
     this.intents = new IntentsResource(http);
     this.documents = new DocumentsResource(http);
     this.guardrailPolicies = new GuardrailPoliciesResource(http);
+    this.prompts = new PromptsResource(http);
   }
 }

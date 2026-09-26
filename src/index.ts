@@ -132,3 +132,15 @@ export type {
   GuardrailPolicyVersionSummary,
   GuardrailPolicyAnalytics,
 } from './resources/guardrailPolicies.js';
+export type {
+  PromptVariable,
+  PromptModelHints,
+  PromptVersion,
+  PromptDeployment,
+  Prompt,
+  PromptContentInput,
+  CreatePromptInput,
+  CreatePromptVersionInput,
+  ListPromptsFilter,
+  PublishPromptResult,
+} from './resources/prompts.js';
