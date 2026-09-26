@@ -107,6 +107,36 @@ export interface AgentRunResult {
   total_latency_ms: number | null;
 }
 
+/** One orchestration step (@liyaengine/core's AgentOrchestrator) — an `llm_call` turn or a `tool_execution`. */
+export interface AgentStep {
+  step_number: number;
+  type: 'llm_call' | 'tool_execution';
+  model?: string;
+  tool_name?: string;
+  tool_input?: unknown;
+  tool_output?: unknown;
+  tool_success?: boolean;
+  input_tokens?: number;
+  output_tokens?: number;
+  cost?: number;
+  served_by?: 'platform' | 'byok';
+  latency_ms: number;
+  timestamp: string;
+  error?: string;
+  error_code?: string;
+}
+
+/**
+ * Step-level, not token-level: AgentOrchestrator has no streaming synthesis
+ * call, so there's no token delta to emit — `step` fires in real time as
+ * each llm_call/tool_execution happens, and `done` carries the complete,
+ * already-generated final answer in one piece.
+ */
+export type AgentRunStreamEvent =
+  | { type: 'step'; step: AgentStep }
+  | ({ type: 'done' } & AgentRunResult)
+  | { type: 'error'; code: string; message: string; status?: number };
+
 export interface AgentRunSummary {
   id: string;
   session_id: string | null;
@@ -200,6 +230,11 @@ export class AgentsResource {
 
   async run(agentKey: string, input: RunAgentInput): Promise<AgentRunResult> {
     return this.http.post<AgentRunResult>(`/v1/agents/${encodeURIComponent(agentKey)}/run`, input);
+  }
+
+  /** Same input as run() — real-time step progress instead of a single awaited result. See AgentRunStreamEvent. */
+  runStream(agentKey: string, input: RunAgentInput): AsyncGenerator<AgentRunStreamEvent, void, undefined> {
+    return this.http.stream<AgentRunStreamEvent>(`/v1/agents/${encodeURIComponent(agentKey)}/run/stream`, input);
   }
 
   async listRuns(agentKey: string, options: ListOptions & { session_id?: string } = {}): Promise<{ runs: AgentRunSummary[]; pagination: Pagination }> {

@@ -20,6 +20,8 @@ export type {
   AgentCatalogEntry,
   RunAgentInput,
   AgentRunResult,
+  AgentStep,
+  AgentRunStreamEvent,
   AgentRunSummary,
   AgentSession,
   Pagination,
@@ -38,6 +40,8 @@ export type {
   RotateWebhookSecretResult,
   RunWorkflowInput,
   WorkflowRunResult,
+  WorkflowStepTrace,
+  WorkflowRunStreamEvent,
   WorkflowRunSummary,
   ListOptions,
 } from './resources/workflows.js';

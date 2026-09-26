@@ -96,6 +96,31 @@ export interface WorkflowRunResult {
   missing_parameter?: Record<string, unknown>;
 }
 
+/** One traced step — a webhook/action call, an ai_intent/ai_agent turn, a condition branch, etc. */
+export interface WorkflowStepTrace {
+  stepId: string;
+  stepType: string;
+  name: string | null;
+  actionId?: string | null;
+  actionName?: string | null;
+  success: boolean;
+  response?: unknown;
+  error?: string;
+  /** True when resumed from cached progress — the step's action was not re-called. */
+  skipped?: boolean;
+  durationMs?: number;
+}
+
+/**
+ * Step-level, not token-level: no step type in a Workflow streams tokens,
+ * so there's no delta to emit — `step` fires as each one is traced, and
+ * `done` carries the complete trace in one piece.
+ */
+export type WorkflowRunStreamEvent =
+  | { type: 'step'; step: WorkflowStepTrace }
+  | ({ type: 'done' } & WorkflowRunResult)
+  | { type: 'error'; code: string; message: string };
+
 export interface WorkflowRunSummary {
   id: string;
   status: string;
@@ -192,6 +217,11 @@ export class WorkflowsResource {
 
   async run(workflowIdOrKey: string, input: RunWorkflowInput = {}): Promise<WorkflowRunResult> {
     return this.http.post<WorkflowRunResult>(`/v1/workflows/${encodeURIComponent(workflowIdOrKey)}/run`, input);
+  }
+
+  /** Same input as run() — real-time step progress instead of a single awaited result. See WorkflowRunStreamEvent. */
+  runStream(workflowIdOrKey: string, input: RunWorkflowInput = {}): AsyncGenerator<WorkflowRunStreamEvent, void, undefined> {
+    return this.http.stream<WorkflowRunStreamEvent>(`/v1/workflows/${encodeURIComponent(workflowIdOrKey)}/run/stream`, input);
   }
 
   async listRuns(workflowIdOrKey: string, options: ListOptions = {}): Promise<{ runs: WorkflowRunSummary[]; pagination: Pagination }> {

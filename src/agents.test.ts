@@ -78,6 +78,18 @@ const server = setupServer(
   http.get(`${BASE_URL}/v1/agents/:agentKey/sessions/:sessionId/transcript`, () =>
     HttpResponse.json({ success: true, data: { session: { id: 'ses_1' }, turns: [] } }),
   ),
+  http.post(`${BASE_URL}/v1/agents/:agentKey/run/stream`, async ({ params }) => {
+    if (params.agentKey === 'not-active') {
+      return HttpResponse.json({ success: false, error: { code: 'AGENT_NOT_ACTIVE', message: 'not active' } }, { status: 400 });
+    }
+    const frames = [
+      { type: 'step', step: { step_number: 1, type: 'llm_call', model: 'gpt-4o', latency_ms: 300, timestamp: '2026-01-01T00:00:00.000Z' } },
+      { type: 'step', step: { step_number: 2, type: 'tool_execution', tool_name: 'lookup_order', tool_success: true, latency_ms: 80, timestamp: '2026-01-01T00:00:00.000Z' } },
+      { type: 'done', run_id: 'run_1', session_id: 'ses_1', history_truncated: false, status: 'completed', output: 'Your order shipped.', steps: 2, total_cost: 0.002, total_latency_ms: 500 },
+    ];
+    const sse = frames.map(f => `data: ${JSON.stringify(f)}\n\n`).join('');
+    return new HttpResponse(sse, { headers: { 'Content-Type': 'text/event-stream' } });
+  }),
 );
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
@@ -177,5 +189,31 @@ describe('agents run history + sessions', () => {
     const { session, turns } = await client().agents.getTranscript('support-triage', 'ses_1');
     expect(session.id).toBe('ses_1');
     expect(turns).toEqual([]);
+  });
+});
+
+describe('agents.runStream', () => {
+  it('yields step frames in real time, ending with a done frame carrying the complete answer', async () => {
+    const events = [];
+    for await (const event of client().agents.runStream('support-triage', { input: { message: 'Where is my order?' } })) {
+      events.push(event);
+    }
+    expect(events).toEqual([
+      { type: 'step', step: { step_number: 1, type: 'llm_call', model: 'gpt-4o', latency_ms: 300, timestamp: '2026-01-01T00:00:00.000Z' } },
+      { type: 'step', step: { step_number: 2, type: 'tool_execution', tool_name: 'lookup_order', tool_success: true, latency_ms: 80, timestamp: '2026-01-01T00:00:00.000Z' } },
+      { type: 'done', run_id: 'run_1', session_id: 'ses_1', history_truncated: false, status: 'completed', output: 'Your order shipped.', steps: 2, total_cost: 0.002, total_latency_ms: 500 },
+    ]);
+  });
+
+  it('throws a typed LiyaEngineAPIError for a pre-flight rejection, without yielding any events', async () => {
+    const events = [];
+    await expect(async () => {
+      for (;;) {
+        const { value, done } = await client().agents.runStream('not-active', { input: { message: 'hi' } }).next();
+        if (done) break;
+        events.push(value);
+      }
+    }).rejects.toMatchObject({ name: 'LiyaEngineAPIError', code: 'AGENT_NOT_ACTIVE', status: 400 });
+    expect(events).toHaveLength(0);
   });
 });

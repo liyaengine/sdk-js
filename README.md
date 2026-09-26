@@ -57,7 +57,7 @@ await client.domains.intents.versions.restore('billing', 'refund-status', versio
 const { results } = await client.domains.query('billing', { query: 'refund timeline' });
 ```
 
-> `domains.update()`/`domains.intents.update()` return `{ updated: number }`, not the updated object — call `get()`/`list()` again for the fresh state. Guardrail policy attachment is still dashboard-only (a separate resource with no `/v1` route yet). To bind an intent's prompt to a Prompt Studio library version instead of inline text, pass `prompt_binding: { kind: 'library_version', prompt_id, version_id, content_hash }` in place of `prompt_template` — editing `prompt_template` directly afterward without also passing `prompt_binding` silently detaches the binding.
+> `domains.update()`/`domains.intents.update()` return `{ updated: number }`, not the updated object — call `get()`/`list()` again for the fresh state. Attach a Guardrail Policy via `client.guardrailPolicies.attach(policyId, 'intent', intent.id)` — it's not a field on `domains.intents.update()` itself. To bind an intent's prompt to a Prompt Studio library version instead of inline text, pass `prompt_binding: { kind: 'library_version', prompt_id, version_id, content_hash }` in place of `prompt_template` — editing `prompt_template` directly afterward without also passing `prompt_binding` silently detaches the binding.
 
 ## Domain Tools
 
@@ -206,6 +206,18 @@ const result = await client.agents.run(agent.agent_key, {
 });
 
 const history = await client.agents.listRuns(agent.agent_key);
+
+// runStream() — real-time step progress instead of a single awaited result.
+// Step-level, not token-level: the agent orchestration loop has no
+// streaming synthesis call, so there's no token delta to forward. What
+// streams is orchestration progress itself — a `step` event the instant
+// each llm_call/tool_execution happens — with the complete final answer
+// arriving in one `done` event, never token-chunked.
+for await (const event of client.agents.runStream(agent.agent_key, { input: { message: 'Where is my order?' } })) {
+  if (event.type === 'step') console.log(event.step.type, event.step.tool_name ?? event.step.model);
+  if (event.type === 'done') console.log(event.output);
+  if (event.type === 'error') console.error(event.code, event.message);
+}
 ```
 
 ## Workflows
@@ -232,6 +244,15 @@ const result = await client.workflows.run(workflow.workflow_key, {
 });
 
 const history = await client.workflows.listRuns(workflow.workflow_key);
+
+// runStream() — real-time step progress, same step-level-not-token-level
+// reasoning as agents.runStream(): no step type in a Workflow streams
+// tokens, so a `step` event fires as each one is traced, and `done`
+// carries the complete trace in one piece.
+for await (const event of client.workflows.runStream(workflow.workflow_key, { input: { email: 'ada@example.com' } })) {
+  if (event.type === 'step') console.log(event.step.stepType, event.step.success);
+  if (event.type === 'done') console.log(event.status, event.trace);
+}
 ```
 
 > `deploy()` and `rotateWebhookSecret()` return the plaintext webhook secret exactly once. Store it immediately — subsequent reads (`get`, `list`) only ever expose `trigger_config.has_secret`.
@@ -337,8 +358,8 @@ new LiyaEngine({
 
 - [x] Domains & Intents (full CRUD parity with the dashboard, prompt binding, agent/execution/retrieval/cache config, versioning, direct retrieval query, narrow document upload — guardrail policy attachment via `guardrailPolicies.attach()`)
 - [x] Collections
-- [x] Agents (full CRUD, deploy, run, run/session history)
-- [x] Workflows (full CRUD, toggle, deploy, webhook secret rotate, run, run history)
+- [x] Agents (full CRUD, deploy, run, run/session history, real-time step streaming via `runStream()`)
+- [x] Workflows (full CRUD, toggle, deploy, webhook secret rotate, run, run history, real-time step streaming via `runStream()`)
 - [x] Evaluations (Datasets/Cases/Suites/Runs/Reviews CRUD, suite execution, cancel/resume, statistical + pairwise compare, standalone scoring)
 - [x] Full KBaaS (document list/get/delete/upload/push, async ingestion jobs + URL crawl, collection↔document/domain attach-detach, analytics/connections)
 - [x] Run / Run (streaming) — built-in packs only for streaming; custom domains use non-streaming `run()`

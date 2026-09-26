@@ -77,6 +77,18 @@ const server = setupServer(
   http.get(`${BASE_URL}/v1/workflows/:workflowIdOrKey/runs/:runId`, () =>
     HttpResponse.json({ success: true, data: { run: { id: 'run_1' } } }),
   ),
+  http.post(`${BASE_URL}/v1/workflows/:workflowIdOrKey/run/stream`, async ({ params }) => {
+    if (params.workflowIdOrKey === 'ghost-wf') {
+      return HttpResponse.json({ success: false, error: { code: 'WORKFLOW_NOT_FOUND', message: 'not found' } }, { status: 404 });
+    }
+    const frames = [
+      { type: 'step', step: { stepId: 's1', stepType: 'ai_intent', name: 'Classify', success: true, response: { confidence: 0.9 }, durationMs: 120 } },
+      { type: 'step', step: { stepId: 's2', stepType: 'condition', name: 'Confidence check', success: true, durationMs: 5 } },
+      { type: 'done', run_id: 'run_1', conversation_id: 'convo_1', status: 'completed', trace: [] },
+    ];
+    const sse = frames.map(f => `data: ${JSON.stringify(f)}\n\n`).join('');
+    return new HttpResponse(sse, { headers: { 'Content-Type': 'text/event-stream' } });
+  }),
 );
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
@@ -173,5 +185,31 @@ describe('workflows run history', () => {
   it('gets a single run', async () => {
     const run = await client().workflows.getRun('lead-intake', 'run_1');
     expect(run.id).toBe('run_1');
+  });
+});
+
+describe('workflows.runStream', () => {
+  it('yields step frames in real time, ending with a done frame carrying the complete trace', async () => {
+    const events = [];
+    for await (const event of client().workflows.runStream('lead-intake', { input: { foo: 'bar' } })) {
+      events.push(event);
+    }
+    expect(events).toEqual([
+      { type: 'step', step: { stepId: 's1', stepType: 'ai_intent', name: 'Classify', success: true, response: { confidence: 0.9 }, durationMs: 120 } },
+      { type: 'step', step: { stepId: 's2', stepType: 'condition', name: 'Confidence check', success: true, durationMs: 5 } },
+      { type: 'done', run_id: 'run_1', conversation_id: 'convo_1', status: 'completed', trace: [] },
+    ]);
+  });
+
+  it('throws a typed LiyaEngineAPIError for a pre-flight rejection, without yielding any events', async () => {
+    const events = [];
+    await expect(async () => {
+      for (;;) {
+        const { value, done } = await client().workflows.runStream('ghost-wf').next();
+        if (done) break;
+        events.push(value);
+      }
+    }).rejects.toMatchObject({ name: 'LiyaEngineAPIError', code: 'WORKFLOW_NOT_FOUND', status: 404 });
+    expect(events).toHaveLength(0);
   });
 });
