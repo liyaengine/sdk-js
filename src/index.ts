@@ -115,3 +115,16 @@ export type {
   UpdateDomainToolsInput,
   TestDomainToolResult,
 } from './resources/domainTools.js';
+export type {
+  GuardrailPolicyConfig,
+  GuardrailPolicy,
+  CreateGuardrailPolicyInput,
+  UpdateGuardrailPolicyInput,
+  GuardrailConsumerType,
+  GuardrailPolicyConnections,
+  GuardrailIssue,
+  TestGuardrailPolicyInput,
+  TestGuardrailPolicyResult,
+  GuardrailPolicyVersionSummary,
+  GuardrailPolicyAnalytics,
+} from './resources/guardrailPolicies.js';

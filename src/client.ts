@@ -5,6 +5,7 @@ import { WorkflowsResource } from './resources/workflows.js';
 import { EvaluationsResource } from './resources/evaluations.js';
 import { DomainsResource, IntentsResource } from './resources/domains.js';
 import { DocumentsResource } from './resources/documents.js';
+import { GuardrailPoliciesResource } from './resources/guardrailPolicies.js';
 
 export interface LiyaEngineOptions {
   /** Your tenant's API key (`liya_...`). Required. */
@@ -29,6 +30,7 @@ export class LiyaEngine {
   readonly domains: DomainsResource;
   readonly intents: IntentsResource;
   readonly documents: DocumentsResource;
+  readonly guardrailPolicies: GuardrailPoliciesResource;
 
   constructor(options: LiyaEngineOptions) {
     if (!options.apiKey) {
@@ -48,5 +50,6 @@ export class LiyaEngine {
     this.domains = new DomainsResource(http);
     this.intents = new IntentsResource(http);
     this.documents = new DocumentsResource(http);
+    this.guardrailPolicies = new GuardrailPoliciesResource(http);
   }
 }

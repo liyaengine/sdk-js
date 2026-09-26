@@ -2,7 +2,7 @@
 
 Official TypeScript/JavaScript client for the [Liya Engine](https://liyaengine.ai) public API.
 
-> **Status: early access.** This SDK currently covers Domains, Intents, Collections, Agents, Workflows, and Evaluations. More resources (Run, Guardrail Policies) ship incrementally — see [Roadmap](#roadmap).
+> **Status: early access.** This SDK currently covers Domains, Intents, Collections, Documents, Agents, Workflows, Evaluations, direct intent execution, and Guardrail Policies. More resources ship incrementally — see [Roadmap](#roadmap).
 
 ## Install
 
@@ -269,6 +269,40 @@ const scored = await client.evaluations.score({
 
 > `custom_scorer_webhook_secret` on a Suite is write-only — it's never returned; only a `custom_scorer_webhook_secret_set` boolean comes back on reads.
 
+## Guardrail Policies
+
+The tenant-configurable safety config that replaces a single hardcoded, global pipeline every tenant used to share identically — PII detection, content policy, schema/action validation, and hallucination checks, all tunable per policy. Every tenant always has exactly one `is_default` policy; a domain/intent/agent/action with no policy attached falls through to it.
+
+```ts
+const strict = await client.guardrailPolicies.create({
+  name: 'Strict — Billing',
+  config: {
+    pre_llm: { pii: { enabled: true, mode: 'redact' } },
+    post_llm: { hallucination_check: { enabled: true } },
+  },
+});
+
+// attach()/detach() is the ONLY way to set a consumer's guardrail_policy_id —
+// it's not a field on that consumer's own create()/update() call.
+await client.guardrailPolicies.attach(strict.id, 'agent', copilot.id);
+
+// Dry-run a saved policy or an unsaved draft config against real content
+// before wiring it in — runs the actual pipeline, same stages a live
+// request would hit.
+const check = await client.guardrailPolicies.test({
+  policy_id: strict.id,
+  stage: 'pre_llm',
+  content: 'My email is jane@example.com, please refund my order.',
+});
+console.log(check.passed, check.content); // false, redacted content
+
+// Check-volume analytics and version history come with every policy.
+const stats = await client.guardrailPolicies.analytics(strict.id, 30);
+const versions = await client.guardrailPolicies.versions.list(strict.id);
+```
+
+> The platform's ML classifier (for injection detection and grounding/hallucination checks) isn't a field on `config` — it's an infrastructure capability that activates automatically whenever it's configured tenant-wide, layered on top of `content_policy.injection_detection` and `post_llm.hallucination_check`. There's nothing to toggle for it specifically.
+
 ## Error handling
 
 Every failed request throws `LiyaEngineAPIError`, a real `Error` subclass carrying the API's `code`, `message`, and HTTP `status`:
@@ -301,7 +335,7 @@ new LiyaEngine({
 
 ## Roadmap
 
-- [x] Domains & Intents (full CRUD parity with the dashboard, prompt binding, agent/execution/retrieval/cache config, versioning, direct retrieval query, narrow document upload — guardrail policy attachment still dashboard-only)
+- [x] Domains & Intents (full CRUD parity with the dashboard, prompt binding, agent/execution/retrieval/cache config, versioning, direct retrieval query, narrow document upload — guardrail policy attachment via `guardrailPolicies.attach()`)
 - [x] Collections
 - [x] Agents (full CRUD, deploy, run, run/session history)
 - [x] Workflows (full CRUD, toggle, deploy, webhook secret rotate, run, run history)
@@ -309,8 +343,8 @@ new LiyaEngine({
 - [x] Full KBaaS (document list/get/delete/upload/push, async ingestion jobs + URL crawl, collection↔document/domain attach-detach, analytics/connections)
 - [x] Run / Run (streaming) — built-in packs only for streaming; custom domains use non-streaming `run()`
 - [x] Domain agentic tool configuration (previously dashboard-only)
+- [x] Guardrail Policies (full CRUD, attach/detach, live test console, versioning, analytics — previously dashboard-only)
 - [ ] Flagged-chunk review
-- [ ] Guardrail Policies
 - [ ] Prompt Studio (holding until the feature itself is committed/merged upstream)
 
 Full docs: https://liyaengine.ai/docs/sdks/javascript
