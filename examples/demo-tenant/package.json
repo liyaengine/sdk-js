@@ -1,0 +1,17 @@
+{
+  "name": "liyaengine-demo-tenant",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "provision": "tsx provision.ts",
+    "reset": "tsx provision.ts --reset",
+    "reset-only": "tsx provision.ts --reset-only"
+  },
+  "dependencies": {
+    "@liyaengine/sdk": "^0.13.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
