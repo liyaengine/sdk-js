@@ -64,6 +64,19 @@ export interface EvalDatasetTemplate {
   example_cases: Array<{ input: unknown; message: string | null }>;
 }
 
+/**
+ * A run is blocked from promotion when its gate evaluates to 'failed' — see
+ * EvalRun.gate_decision. Every threshold is optional; an unset one is never
+ * checked. require_passed_outcome defaults to true (an errored/inconclusive
+ * run fails the gate) unless explicitly set to false.
+ */
+export interface EvaluationGatePolicy {
+  schema_version: 1;
+  require_passed_outcome?: boolean;
+  min_pass_rate?: number;
+  min_mean_score?: number;
+}
+
 /** A suite binds a Dataset to one specific (domain_key, intent_key); at most one custom scorer, either kind. */
 export interface EvalSuite {
   id: string;
@@ -78,6 +91,8 @@ export interface EvalSuite {
   /** The webhook secret itself is never returned after initial submission — only whether one is set. */
   custom_scorer_webhook_secret_set: boolean;
   baseline_run_id: string | null;
+  /** Null means no gate is configured — every run of this suite reports gate_decision: 'not_configured'. */
+  gate_policy: EvaluationGatePolicy | null;
   created_at: string;
   updated_at: string;
 }
@@ -92,6 +107,7 @@ export interface CreateEvalSuiteInput {
   custom_scorer_webhook_url?: string;
   /** Write-only — never returned; only custom_scorer_webhook_secret_set comes back. */
   custom_scorer_webhook_secret?: string;
+  gate_policy?: EvaluationGatePolicy | null;
 }
 
 export interface UpdateEvalSuiteInput {
@@ -101,10 +117,14 @@ export interface UpdateEvalSuiteInput {
   custom_scorer_label?: string | null;
   custom_scorer_webhook_url?: string | null;
   custom_scorer_webhook_secret?: string | null;
+  gate_policy?: EvaluationGatePolicy | null;
 }
 
 export type EvalExecutionMode = 'liya_intent' | 'external_output';
 export type EvalRunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+/** 'error'/'inconclusive'/'not_evaluated' are distinct from 'failed' — an errored run isn't the same as a run whose cases failed. */
+export type EvaluationOutcome = 'passed' | 'failed' | 'error' | 'inconclusive' | 'not_evaluated';
+export type EvalGateDecision = 'passed' | 'failed' | 'not_configured';
 
 /** Always async — creation endpoints return this in 'pending' status; poll runs.get() for progress/results. */
 export interface EvalRun {
@@ -132,6 +152,12 @@ export interface EvalRun {
   judge_failures: number | null;
   judge_cap_reached: boolean;
   model_override: string | null;
+  /** Aggregate across every case result — distinct from gate_decision, which also weighs the suite's own thresholds. */
+  evaluation_outcome: EvaluationOutcome | null;
+  /** 'not_configured' when the suite has no gate_policy — every run of that suite reports this until one is set. */
+  gate_decision: EvalGateDecision | null;
+  /** Populated only when gate_decision is 'failed' — one entry per threshold the run missed. */
+  gate_failure_reasons: string[] | null;
 }
 
 export interface EvalRunDetail {
@@ -146,12 +172,17 @@ export interface EvalRunDetail {
   started_at: string;
   completed_at: string | null;
   error: string | null;
+  evaluation_outcome: EvaluationOutcome | null;
+  gate_decision: EvalGateDecision | null;
+  gate_failure_reasons: string[] | null;
   results: Array<{
     case_id: string;
     passed: boolean;
     scores: unknown[];
     latency_ms: number | null;
     error: string | null;
+    /** Tamper-evident hash over this result's case snapshot, output, and scores — present once persisted evidence shipped. */
+    evidence_hash?: string;
   }>;
 }
 
