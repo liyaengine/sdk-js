@@ -48,12 +48,14 @@ export class HttpClient {
   }
 
   /** Shared fetch/retry/error-envelope core — returns the parsed body as-is (past the success check), not unwrapped to `.data`. Almost every endpoint wants `request()` below instead. */
-  private async requestEnvelope<T>(method: string, path: string, body?: unknown): Promise<T> {
+  private async requestEnvelope<T>(method: string, path: string, body?: unknown, overrides?: { timeoutMs?: number; maxRetries?: number }): Promise<T> {
+    const timeoutMs = overrides?.timeoutMs ?? this.timeoutMs;
+    const maxRetries = overrides?.maxRetries ?? this.maxRetries;
     let lastError: unknown;
 
-    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
 
       try {
         const res = await this.fetchImpl(`${this.baseUrl}${path}`, {
@@ -67,7 +69,7 @@ export class HttpClient {
         });
         clearTimeout(timer);
 
-        if (RETRYABLE_STATUS.has(res.status) && attempt < this.maxRetries) {
+        if (RETRYABLE_STATUS.has(res.status) && attempt < maxRetries) {
           lastError = new LiyaEngineAPIError(res.status, 'RETRYABLE', `Retryable status ${res.status}`);
           await sleep(2 ** attempt * 250);
           continue;
@@ -88,13 +90,13 @@ export class HttpClient {
         clearTimeout(timer);
         if (err instanceof LiyaEngineAPIError) throw err;
         if (err instanceof DOMException && err.name === 'AbortError') {
-          lastError = new LiyaEngineNetworkError(`Request timed out after ${this.timeoutMs}ms`, err);
+          lastError = new LiyaEngineNetworkError(`Request timed out after ${timeoutMs}ms`, err);
         } else if (err instanceof LiyaEngineNetworkError) {
           throw err;
         } else {
           lastError = new LiyaEngineNetworkError('Network request failed', err);
         }
-        if (attempt >= this.maxRetries) throw lastError;
+        if (attempt >= maxRetries) throw lastError;
         await sleep(2 ** attempt * 250);
       }
     }
@@ -102,8 +104,8 @@ export class HttpClient {
     throw lastError instanceof Error ? lastError : new LiyaEngineNetworkError('Request failed');
   }
 
-  async request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const json = await this.requestEnvelope<SuccessEnvelope<T>>(method, path, body);
+  async request<T>(method: string, path: string, body?: unknown, overrides?: { timeoutMs?: number; maxRetries?: number }): Promise<T> {
+    const json = await this.requestEnvelope<SuccessEnvelope<T>>(method, path, body, overrides);
     return json.data;
   }
 
@@ -128,6 +130,17 @@ export class HttpClient {
    */
   postEnvelope<T>(path: string, body?: unknown): Promise<T> {
     return this.requestEnvelope<T>('POST', path, body);
+  }
+
+  /**
+   * For a POST whose own request body already carries a wait budget (today:
+   * only the eval release-gate check, `max_wait_seconds` up to 280s) — a
+   * caller-supplied timeout instead of the client's 30s default, and no
+   * retries: retrying would trigger a second real eval run, not safely redo
+   * an idempotent request.
+   */
+  postLongRunning<T>(path: string, body: unknown, timeoutMs: number): Promise<T> {
+    return this.request<T>('POST', path, body, { timeoutMs, maxRetries: 0 });
   }
 
   /**

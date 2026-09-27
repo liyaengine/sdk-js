@@ -108,6 +108,35 @@ const server = setupServer(
   http.post(`${BASE_URL}/v1/evals/suites/:id/compare-models`, () =>
     HttpResponse.json({ success: true, data: { run_a: { ...fixtureRun, id: 'run_a', model_override: 'gpt-4o-mini' }, run_b: { ...fixtureRun, id: 'run_b', model_override: 'gpt-4o' } } }, { status: 202 }),
   ),
+  http.get(`${BASE_URL}/v1/evals/suites/:id/gate`, () => HttpResponse.json({
+    success: true,
+    data: { gate: {
+      suite_id: 'suite_123', gate_configured: true, run_id: 'run_123', run_status: 'completed',
+      gate_decision: 'passed', gate_failure_reasons: [], evaluation_outcome: 'passed',
+      mean_score: 4.5, cases_total: 3, cases_passed: 3, completed_at: '2026-01-01T00:00:00.000Z',
+    } },
+  })),
+  http.post(`${BASE_URL}/v1/evals/suites/:id/gate/check`, async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    if (body.max_wait_seconds === 1) {
+      return HttpResponse.json({
+        success: true,
+        data: { gate: {
+          run_id: 'run_timeout', run_status: 'running', gate_decision: 'not_configured',
+          gate_failure_reasons: [], evaluation_outcome: null, mean_score: null,
+          cases_total: 3, cases_passed: 1, timed_out: true,
+        } },
+      }, { status: 202 });
+    }
+    return HttpResponse.json({
+      success: true,
+      data: { gate: {
+        run_id: 'run_456', run_status: 'completed', gate_decision: 'failed',
+        gate_failure_reasons: ['Pass rate 66.7% is below 80.0%.'], evaluation_outcome: 'failed',
+        mean_score: 2.1, cases_total: 3, cases_passed: 2, timed_out: false,
+      } },
+    });
+  }),
 
   http.post(`${BASE_URL}/v1/evals/results/:resultId/reviews`, () =>
     HttpResponse.json({ success: true, data: { review: { id: 'rev_1', tenant_id: 'tenant_1', run_result_id: 'result_1', reviewer_id: 'key_1', verdict: 'agree', corrected_score: null, note: null, created_at: '2026-01-01T00:00:00.000Z' } } }, { status: 201 }),
@@ -226,6 +255,25 @@ describe('evaluations.suites', () => {
     const { run_a, run_b } = await client().evaluations.suites.compareModels('suite_123', 'gpt-4o-mini', 'gpt-4o');
     expect(run_a.model_override).toBe('gpt-4o-mini');
     expect(run_b.model_override).toBe('gpt-4o');
+  });
+
+  it('reads the latest gate status without triggering a run', async () => {
+    const gate = await client().evaluations.suites.getGate('suite_123');
+    expect(gate.gate_decision).toBe('passed');
+    expect(gate.run_id).toBe('run_123');
+  });
+
+  it('runs and awaits the release gate, returning a resolved decision', async () => {
+    const gate = await client().evaluations.suites.checkGate('suite_123', { max_wait_seconds: 90 });
+    expect(gate.timed_out).toBe(false);
+    expect(gate.gate_decision).toBe('failed');
+    expect(gate.gate_failure_reasons).toContain('Pass rate 66.7% is below 80.0%.');
+  });
+
+  it('reports timed_out when max_wait_seconds elapses before the gate resolves', async () => {
+    const gate = await client().evaluations.suites.checkGate('suite_123', { max_wait_seconds: 1 });
+    expect(gate.timed_out).toBe(true);
+    expect(gate.run_id).toBe('run_timeout');
   });
 });
 

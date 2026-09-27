@@ -201,6 +201,35 @@ export interface SubmitEvalRunInput {
   custom_scorer_webhook_secret?: string;
 }
 
+export interface EvalGateStatus {
+  suite_id: string;
+  /** False when the suite has no gate_policy at all. */
+  gate_configured: boolean;
+  /** Null if the suite has never finished a run. */
+  run_id: string | null;
+  run_status: 'completed' | 'failed' | 'cancelled' | null;
+  gate_decision: EvalGateDecision;
+  gate_failure_reasons: string[];
+  evaluation_outcome: EvaluationOutcome | null;
+  mean_score: number | null;
+  cases_total: number | null;
+  cases_passed: number | null;
+  completed_at: string | null;
+}
+
+export interface EvalGateCheckResult {
+  run_id: string;
+  run_status: EvalRunStatus;
+  gate_decision: EvalGateDecision;
+  gate_failure_reasons: string[];
+  evaluation_outcome: EvaluationOutcome | null;
+  mean_score: number | null;
+  cases_total: number;
+  cases_passed: number;
+  /** True when max_wait_seconds elapsed before the run finished — poll runs.get(run_id) from here. */
+  timed_out: boolean;
+}
+
 export interface RunComparison {
   comparison: {
     run_a: Record<string, unknown>;
@@ -374,6 +403,38 @@ class EvalSuitesResource {
   /** Creates two ordinary runs against different force_model overrides — compare them afterward via runs.compare()/comparePairwise(). */
   async compareModels(id: string, modelA: string, modelB: string): Promise<{ run_a: EvalRun; run_b: EvalRun }> {
     return this.http.post<{ run_a: EvalRun; run_b: EvalRun }>(`/v1/evals/suites/${encodeURIComponent(id)}/compare-models`, { model_a: modelA, model_b: modelB });
+  }
+
+  /** Reads the latest finished run's gate result — never triggers a run. For a synchronous test-and-gate call, use checkGate() instead. */
+  async getGate(id: string): Promise<EvalGateStatus> {
+    const { gate } = await this.http.get<{ gate: EvalGateStatus }>(`/v1/evals/suites/${encodeURIComponent(id)}/gate`);
+    return gate;
+  }
+
+  /**
+   * The CI-facing release gate: triggers a real run of this suite (same
+   * execution path as run() — same budget gating, audit logging, evidence
+   * capture) and blocks until the gate resolves, so a pipeline step gets a
+   * synchronous pass/fail instead of hand-rolling run+poll logic.
+   *
+   * A suite with no gate_policy always resolves with gate_decision
+   * 'not_configured' — configure one via suites.update() first, or this
+   * call will never block a pipeline on its own.
+   *
+   * If max_wait_seconds elapses first, resolves with timed_out: true and a
+   * run_id — poll runs.get(run_id) from there rather than calling this
+   * again (that starts a second run).
+   */
+  async checkGate(id: string, opts: { model?: string; max_wait_seconds?: number } = {}): Promise<EvalGateCheckResult> {
+    const maxWaitSeconds = Math.min(Math.max(opts.max_wait_seconds ?? 60, 1), 280);
+    // A few seconds of slack over the server's own bound so the client
+    // timeout never fires a beat before the server would have responded.
+    const { gate } = await this.http.postLongRunning<{ gate: EvalGateCheckResult }>(
+      `/v1/evals/suites/${encodeURIComponent(id)}/gate/check`,
+      { ...opts, max_wait_seconds: maxWaitSeconds },
+      (maxWaitSeconds + 10) * 1000,
+    );
+    return gate;
   }
 }
 
