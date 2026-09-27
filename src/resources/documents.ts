@@ -102,6 +102,19 @@ export interface CreateFileIngestionJobInput {
   collectionIds?: string[];
 }
 
+/** One chunk from the tenant-wide embedding store that accumulated enough human corrections to be flagged for review. */
+export interface FlaggedChunk {
+  id: string;
+  /** What kind of content this chunk came from (document, article, etc.). */
+  source_type: string;
+  source_id: string;
+  chunk_index: number;
+  content_text: string;
+  correction_count: number;
+  flagged_at: string | null;
+  created_at: string;
+}
+
 export interface ListIngestionJobsInput {
   page?: number;
   pageSize?: number;
@@ -199,5 +212,21 @@ export class DocumentsResource {
    */
   async push(input: PushDocumentInput): Promise<PushDocumentResult> {
     return this.http.post<PushDocumentResult>('/v1/documents/push', input);
+  }
+
+  /**
+   * Read/resolve only — what actually flags a chunk (repeated human
+   * corrections on a support ticket or conversation) is product-internal
+   * logic with no SDK surface. This is the generic, tenant-wide half: any
+   * domain's content can end up flagged, regardless of what flagged it.
+   */
+  async listFlaggedChunks(): Promise<FlaggedChunk[]> {
+    const { chunks } = await this.http.get<{ chunks: FlaggedChunk[]; total: number }>('/v1/documents/flagged-chunks');
+    return chunks;
+  }
+
+  /** Clears the flag and resets the correction count to 0. Does not edit or delete the chunk's content — resolving is an acknowledgement, not a fix. */
+  async resolveFlaggedChunk(id: string): Promise<void> {
+    await this.http.post<void>(`/v1/documents/flagged-chunks/${encodeURIComponent(id)}/resolve`, {});
   }
 }

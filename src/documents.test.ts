@@ -68,6 +68,19 @@ const server = setupServer(
   http.post(`${BASE_URL}/v1/documents/jobs/job_1/cancel`, () =>
     HttpResponse.json({ success: true, data: { job: { ...fixtureJob, status: 'cancelled' } } }),
   ),
+
+  http.get(`${BASE_URL}/v1/documents/flagged-chunks`, () => HttpResponse.json({
+    success: true,
+    data: {
+      chunks: [{
+        id: 'chunk_1', source_type: 'document', source_id: 'doc_123', chunk_index: 2,
+        content_text: 'stale refund policy text', correction_count: 3,
+        flagged_at: '2026-01-02T00:00:00.000Z', created_at: '2026-01-01T00:00:00.000Z',
+      }],
+      total: 1,
+    },
+  })),
+  http.post(`${BASE_URL}/v1/documents/flagged-chunks/chunk_1/resolve`, () => HttpResponse.json({ success: true })),
 );
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
@@ -103,6 +116,14 @@ describe('documents', () => {
   it('pushes content by URL and returns the upserted source_id', async () => {
     const pushed = await client().documents.push({ url: 'https://example.com/faq', title: 'FAQ' });
     expect(pushed).toEqual({ source_id: 'src_1', chunks: 3, title: 'FAQ' });
+  });
+
+  it('lists and resolves flagged chunks', async () => {
+    const chunks = await client().documents.listFlaggedChunks();
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].correction_count).toBe(3);
+
+    await expect(client().documents.resolveFlaggedChunk('chunk_1')).resolves.toBeUndefined();
   });
 });
 

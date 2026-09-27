@@ -189,6 +189,15 @@ await client.documents.jobs.cancel(jobId);
 
 > Cancellation is cooperative (checked between page fetches / chunk embeds), not instant, and there is no crash-recovery sweep — if the process running a job restarts mid-run, the job is left "running" indefinitely rather than auto-retried. Poll `get(jobId)` for terminal status; don't assume `cancel()` stops it immediately.
 
+### Flagged chunks
+
+A chunk that accumulates enough human corrections (a support agent repeatedly overriding an AI answer that cited it) gets flagged for review — content worth updating or removing. Read/resolve only; whatever caused the flag is product-internal logic with no SDK surface.
+
+```ts
+const flagged = await client.documents.listFlaggedChunks();
+await client.documents.resolveFlaggedChunk(flagged[0].id);
+```
+
 ## Agents
 
 ```ts
@@ -421,7 +430,7 @@ new LiyaEngine({
 - [x] Run / Run (streaming) — built-in packs only for streaming; custom domains use non-streaming `run()`
 - [x] Domain agentic tool configuration (previously dashboard-only)
 - [x] Guardrail Policies (full CRUD, attach/detach, live test console, versioning, analytics — previously dashboard-only)
-- [ ] Flagged-chunk review
+- [x] Flagged-chunk review (read/resolve — the corrections that cause a flag are dashboard-only, product-internal logic)
 - [x] Prompt Studio (list/get/create + versioning + publish — AI-authoring stays dashboard-only)
 
 Full docs: https://liyaengine.ai/docs/sdks/javascript
