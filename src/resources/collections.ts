@@ -30,7 +30,13 @@ export interface CreateCollectionInput {
   slug: string;
   label: string;
   color?: string;
-  domain_keys: string[];
+  /**
+   * Omitted or empty creates a "general" collection — not owned by any
+   * domain, queryable tenant-wide via `collections.query()` rather than
+   * attached to a specific domain's retrieval. Still attachable to specific
+   * domains afterward via `collections.domains.attach()`.
+   */
+  domain_keys?: string[];
   default_embedding_model?: string;
   default_chunking_strategy?: ChunkingStrategy;
   default_chunk_size?: number;
@@ -67,6 +73,28 @@ export interface CollectionConnections {
   agents: Array<{ id: string; name: string; via: string }>;
   /** Always null — no workflow-to-collection link, direct or indirect, exists in the schema. A real answer, not a stub. */
   workflows: null;
+}
+
+export interface KnowledgeChunk {
+  source_type: string;
+  source_id?: string;
+  content_text: string;
+  metadata: Record<string, unknown>;
+  /** Cosine similarity, 0-1. min_similarity is applied as a hard filter server-side (default 0.5) — every result returned already cleared that bar. */
+  similarity: number;
+}
+
+export interface QueryCollectionsInput {
+  query: string;
+  /** Omitted searches every general (domain-less) collection the tenant owns. */
+  collection_ids?: string[];
+  /** 1-20, default 5. */
+  top_k?: number;
+}
+
+export interface QueryCollectionsResult {
+  results: KnowledgeChunk[];
+  total: number;
 }
 
 class CollectionDomainsResource {
@@ -162,5 +190,15 @@ export class CollectionsResource {
   /** What references this collection — domains, intents, agents (indirect via domain), and workflows (always null, see CollectionConnections). */
   async connections(id: string): Promise<CollectionConnections> {
     return this.http.get<CollectionConnections>(`/v1/collections/${encodeURIComponent(id)}/connections`);
+  }
+
+  /**
+   * Direct retrieval — no Domain, Intent, or Agent involved at all. Pass
+   * `collection_ids` to search specific collections, or omit it to search
+   * every general collection the tenant owns. Subject to the account's
+   * monthly KBaaS query quota, same as a domain's own `query()`.
+   */
+  async query(input: QueryCollectionsInput): Promise<QueryCollectionsResult> {
+    return this.http.post<QueryCollectionsResult>('/v1/collections/query', input);
   }
 }

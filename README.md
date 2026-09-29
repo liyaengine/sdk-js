@@ -128,9 +128,13 @@ for await (const event of client.intents.stream({ domain: 'billing', intent: 're
 ```ts
 await client.collections.list();
 await client.collections.get(id);
-await client.collections.create({ slug, label, domain_keys });
+await client.collections.create({ slug, label, domain_keys }); // omit/empty domain_keys for a general (domain-less) collection
 await client.collections.update(id, { label, tags, visibility });
 await client.collections.delete(id);
+
+// Direct retrieval — no Domain, Intent, or Agent needed at all. Omit
+// collection_ids to search every general collection the tenant owns.
+const { results, total } = await client.collections.query({ query: 'PTO policy', top_k: 5 });
 
 // Reference documents into a collection — never copies them, never touches embeddings.
 await client.collections.documents.attach(collectionId, documentId);

@@ -98,6 +98,19 @@ const server = setupServer(
       },
     }),
   ),
+  http.post(`${BASE_URL}/v1/collections/query`, async ({ request }) => {
+    const body = (await request.json()) as { query: string; collection_ids?: string[] };
+    if (!body.query) {
+      return HttpResponse.json({ success: false, error: { code: 'INVALID_INPUT', message: 'query is required.' } }, { status: 400 });
+    }
+    return HttpResponse.json({
+      success: true,
+      data: {
+        results: [{ source_type: 'handbook', source_id: 'doc_123', content_text: 'PTO accrues at 1.5 days/month.', metadata: {}, similarity: 0.87 }],
+        total: 1,
+      },
+    });
+  }),
 );
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
@@ -208,5 +221,21 @@ describe('collections.connections', () => {
     expect(connections.domains).toEqual([{ domain_key: 'legal-ops', display_name: 'Legal Ops' }]);
     expect(connections.agents).toHaveLength(1);
     expect(connections.workflows).toBeNull();
+  });
+});
+
+describe('collections.query', () => {
+  it('runs standalone retrieval, no domain/intent/agent involved', async () => {
+    const result = await client().collections.query({ query: 'PTO policy' });
+    expect(result.total).toBe(1);
+    expect(result.results[0]).toEqual({
+      source_type: 'handbook', source_id: 'doc_123', content_text: 'PTO accrues at 1.5 days/month.', metadata: {}, similarity: 0.87,
+    });
+  });
+
+  it('rejects a request with no query', async () => {
+    await expect(client().collections.query({ query: '' })).rejects.toMatchObject({
+      code: 'INVALID_INPUT',
+    });
   });
 });
