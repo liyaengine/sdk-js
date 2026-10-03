@@ -42,6 +42,12 @@ export type {
   WorkflowRunResult,
   WorkflowStepTrace,
   WorkflowRunStreamEvent,
+  WorkflowRunStatus,
+  WorkflowApproval,
+  WorkflowApprovalStatus,
+  DecideApprovalInput,
+  DecideApprovalResult,
+  WorkflowTriggerCatalog,
   WorkflowRunSummary,
   ListOptions,
 } from './resources/workflows.js';

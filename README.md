@@ -270,6 +270,49 @@ for await (const event of client.workflows.runStream(workflow.workflow_key, { in
 
 > `deploy()` and `rotateWebhookSecret()` return the plaintext webhook secret exactly once. Store it immediately — subsequent reads (`get`, `list`) only ever expose `trigger_config.has_secret`.
 
+### Scheduled and event triggers
+
+```ts
+// Run every weekday at 07:00 Chicago time, with static input for each run.
+await client.workflows.create({
+  name: 'Daily regulatory digest',
+  steps: [
+    { step_type: 'trigger', config: { trigger_subtype: 'schedule', cron: '0 7 * * 1-5', timezone: 'America/Chicago', input: { region: 'US' } } },
+    // ...
+  ],
+});
+
+// Run whenever a document lands in a collection.
+await client.workflows.create({
+  name: 'Map new regulation to policies',
+  steps: [
+    { step_type: 'trigger', config: { trigger_subtype: 'event', event_type: 'document.ingested', filter: { collection_id: 'col_123' } } },
+    // ...
+  ],
+});
+
+const catalog = await client.workflows.triggerCatalog(); // event types + allowed filters
+```
+
+Schedules start when the workflow is deployed and run at most every 5 minutes; missed slots during downtime aren't replayed. Event payload fields reach steps as `{{trigger.*}}`, plus `{{trigger.event_id}}` for de-duplicating actions. A workflow never receives its own `workflow.*` events, and event chains stop after 3 hops.
+
+### Approval steps
+
+An `approval` step pauses the run (`status: 'awaiting_approval'`, with `approval_id`) until someone decides. Approve continues down the step's success branch; reject follows its failure branch, or ends the run as `rejected`.
+
+```ts
+const run = await client.workflows.run('refunds', { input: { order_id: '1042', amount: 120 } });
+if (run.status === 'awaiting_approval') {
+  // e.g. from a Slack button handler — decided_by names the person in the audit log
+  const { run: resumed } = await client.workflows.approvals.decide(run.approval_id!, {
+    decision: 'approve', note: 'Within policy', decided_by: 'jane@acme.com',
+  });
+  console.log(resumed.status); // 'completed', or 'awaiting_approval' again for a second approval step
+}
+
+const waiting = await client.workflows.approvals.list({ status: 'pending' });
+```
+
 ## Evaluations
 
 A Suite binds a Dataset to one specific intent; `suites.run()` calls that intent for real and scores what it produces. `runs.submit()`/`evaluations.score()` score a response you already generated yourself — no intent execution involved.
@@ -428,10 +471,10 @@ new LiyaEngine({
 - [x] Domains & Intents (full CRUD parity with the dashboard, prompt binding, agent/execution/retrieval/cache config, versioning, direct retrieval query, narrow document upload — guardrail policy attachment via `guardrailPolicies.attach()`)
 - [x] Collections
 - [x] Agents (full CRUD, deploy, run, run/session history, real-time step streaming via `runStream()`)
-- [x] Workflows (full CRUD, toggle, deploy, webhook secret rotate, run, run history, real-time step streaming via `runStream()`)
+- [x] Workflows (full CRUD, toggle, deploy, webhook secret rotate, run, run history, real-time step streaming via `runStream()`, schedule and event triggers, approval steps)
 - [x] Evaluations (Datasets/Cases/Suites/Runs/Reviews CRUD, suite execution, cancel/resume, statistical + pairwise compare, standalone scoring, CI-facing release gate)
 - [x] Full KBaaS (document list/get/delete/upload/push, async ingestion jobs + URL crawl, collection↔document/domain attach-detach, analytics/connections)
-- [x] Run / Run (streaming) — built-in packs only for streaming; custom domains use non-streaming `run()`
+- [x] Run / Run (streaming) — built-in packs and custom-domain intents
 - [x] Domain agentic tool configuration (previously dashboard-only)
 - [x] Guardrail Policies (full CRUD, attach/detach, live test console, versioning, analytics — previously dashboard-only)
 - [x] Flagged-chunk review (read/resolve — the corrections that cause a flag are dashboard-only, product-internal logic)

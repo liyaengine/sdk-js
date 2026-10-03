@@ -43,6 +43,10 @@ export interface Workflow {
   status: WorkflowStatus;
   trigger_type: string;
   trigger_config: { slug: string; has_secret: boolean } | null;
+  /** Schedule/event dispatch state — null unless active with a valid schedule or event trigger. */
+  schedule_next_run_at?: string | null;
+  schedule_last_run_at?: string | null;
+  event_type?: string | null;
   created_at: string;
   updated_at: string;
   steps: WorkflowStep[];
@@ -88,12 +92,63 @@ export interface RunWorkflowInput {
   conversation_id?: string;
 }
 
+/** awaiting_approval = paused at an approval step (see approvals); rejected = an approver rejected with no failure branch. */
+export type WorkflowRunStatus = 'running' | 'completed' | 'needs_input' | 'failed' | 'awaiting_approval' | 'rejected';
+
 export interface WorkflowRunResult {
   run_id: string;
   conversation_id: string;
-  status: 'completed' | 'needs_input' | 'failed';
+  status: WorkflowRunStatus;
   trace: unknown[];
   missing_parameter?: Record<string, unknown>;
+  /** Set when status is 'awaiting_approval' — decide it with workflows.approvals.decide(). */
+  approval_id?: string;
+}
+
+export type WorkflowApprovalStatus = 'pending' | 'approved' | 'rejected' | 'expired' | 'cancelled';
+
+/** A workflow approval step waiting on (or decided by) a person. */
+export interface WorkflowApproval {
+  id: string;
+  workflow_id: string;
+  workflow_name: string | null;
+  workflow_key: string | null;
+  run_id: string;
+  step_id: string;
+  status: WorkflowApprovalStatus;
+  title: string;
+  summary: string | null;
+  /** Snapshot of the run's trigger input and step outputs when approval was requested. */
+  context: unknown;
+  assignee_role: string | null;
+  assignee_user_ids: string[];
+  timeout_action: 'approve' | 'reject';
+  expires_at: string | null;
+  decided_by: string | null;
+  decided_by_type: 'user' | 'api' | 'system' | null;
+  decided_at: string | null;
+  decision_note: string | null;
+  created_at: string;
+  can_decide?: boolean;
+}
+
+export interface DecideApprovalInput {
+  decision: 'approve' | 'reject';
+  note?: string;
+  /** Who decided in your system (e.g. their email) — recorded on the approval and in the audit log. */
+  decided_by?: string;
+}
+
+export interface DecideApprovalResult {
+  approval: WorkflowApproval;
+  /** The resumed run — can be 'awaiting_approval' again if the workflow has a second approval step. */
+  run: { run_id?: string; status: WorkflowRunStatus; approval_id?: string; error?: string };
+}
+
+/** Event types and schedule rules a workflow's trigger step can use. */
+export interface WorkflowTriggerCatalog {
+  schedule: { format: string; min_interval_minutes: number; timezone: string; run_input: string };
+  events: Array<{ event_type: string; description: string; filters: string[] }>;
 }
 
 /** One traced step — a webhook/action call, an ai_intent/ai_agent turn, a condition branch, etc. */
@@ -123,7 +178,7 @@ export type WorkflowRunStreamEvent =
 
 export interface WorkflowRunSummary {
   id: string;
-  status: string;
+  status: WorkflowRunStatus;
   trigger: string;
   started_at: string;
   completed_at: string | null;
@@ -160,8 +215,50 @@ function toQuery(options: ListOptions = {}): string {
  * secret-rotate, plus run/run-history. {workflowIdOrKey} in every method
  * below accepts either the database id or the human-readable workflow_key.
  */
-export class WorkflowsResource {
+/**
+ * Human approval steps. A run that reaches an approval step pauses with
+ * status 'awaiting_approval'; deciding resumes it down the approved or
+ * rejected branch. Use this to put approvals in Slack, Teams, email or your
+ * own app — pass decided_by so the audit trail names the person.
+ */
+export class WorkflowApprovalsResource {
   constructor(private readonly http: HttpClient) {}
+
+  async list(options: { status?: WorkflowApprovalStatus; workflowId?: string; limit?: number } = {}): Promise<WorkflowApproval[]> {
+    const params = new URLSearchParams();
+    if (options.status !== undefined) params.set('status', options.status);
+    if (options.workflowId !== undefined) params.set('workflow_id', options.workflowId);
+    if (options.limit !== undefined) params.set('limit', String(options.limit));
+    const qs = params.toString();
+    return this.http.get<WorkflowApproval[]>(`/v1/workflows/approvals${qs ? `?${qs}` : ''}`);
+  }
+
+  async get(approvalId: string): Promise<WorkflowApproval> {
+    return this.http.get<WorkflowApproval>(`/v1/workflows/approvals/${encodeURIComponent(approvalId)}`);
+  }
+
+  /** Throws APPROVAL_ALREADY_DECIDED (409) if someone else decided first. */
+  async decide(approvalId: string, input: DecideApprovalInput): Promise<DecideApprovalResult> {
+    return this.http.post<DecideApprovalResult>(`/v1/workflows/approvals/${encodeURIComponent(approvalId)}/decision`, input);
+  }
+}
+
+export class WorkflowsResource {
+  readonly approvals: WorkflowApprovalsResource;
+
+  constructor(private readonly http: HttpClient) {
+    this.approvals = new WorkflowApprovalsResource(http);
+  }
+
+  /**
+   * Schedule triggers: set the trigger step's config to
+   * { trigger_subtype: 'schedule', cron, timezone?, input? }.
+   * Event triggers: { trigger_subtype: 'event', event_type, filter? }.
+   * This lists the valid event types and filters.
+   */
+  async triggerCatalog(): Promise<WorkflowTriggerCatalog> {
+    return this.http.get<WorkflowTriggerCatalog>('/v1/workflows/trigger-catalog');
+  }
 
   async list(): Promise<Workflow[]> {
     return this.http.get<Workflow[]>('/v1/workflows');
