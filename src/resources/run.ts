@@ -81,10 +81,41 @@ export interface RunIntentResult {
   usage?: RunUsage;
 }
 
+/** One retrieved source, as sent in a `sources` stream event. */
+export interface RunStreamSource {
+  doc: string;
+  section?: string;
+  relevance: number;
+  url?: string;
+}
+
 export type RunStreamEvent =
+  /** Custom-domain intents only: the retrieved evidence, sent once before the first token. */
+  | { type: 'sources'; sources: RunStreamSource[] }
   | { type: 'token'; delta: string }
-  | { type: 'done'; session_id: string; latency_ms: number; input_tokens: number; output_tokens: number; cost_usd: number; served_by: 'platform' | 'byok' }
-  | { type: 'error'; message: string };
+  | {
+      type: 'done';
+      session_id: string;
+      latency_ms: number;
+      input_tokens: number;
+      output_tokens: number;
+      cost_usd: number;
+      served_by: 'platform' | 'byok';
+      /** Fields below are set for custom-domain intents only. */
+      request_id?: string;
+      status?: 'success' | 'partial' | 'error';
+      model?: string;
+      /** 'live' = tokens arrived as generated; 'buffered' = the whole answer arrived as one token (see stream_buffer_reason). */
+      stream_mode?: 'live' | 'buffered';
+      stream_buffer_reason?: string;
+      /** Validated structured output, when the intent has an output schema. */
+      structured?: Record<string, unknown>;
+      confidence?: number;
+      /** Set when a grounding block policy replaced the answer with the fallback message. */
+      blocked?: { reason: 'ungrounded' | 'hallucination'; flags: string[] };
+      escalation?: { required: boolean; reason?: string };
+    }
+  | { type: 'error'; message: string; code?: string };
 
 export function translateRunInput(input: RunIntentInput): Record<string, unknown> {
   return {

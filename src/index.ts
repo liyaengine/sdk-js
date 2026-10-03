@@ -110,6 +110,7 @@ export type {
   ChatRunData,
   StandardRunData,
   RunStreamEvent,
+  RunStreamSource,
 } from './resources/run.js';
 export type {
   PlatformTool,

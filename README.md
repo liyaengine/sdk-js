@@ -121,7 +121,7 @@ for await (const event of client.intents.stream({ domain: 'billing', intent: 're
 }
 ```
 
-> **Streaming is built-in-packs only** (`chat`, `hiring`, `fintech`, `healthcare`, `ehs`, `compliance`) — a custom-domain intent throws a `LiyaEngineAPIError` (`STREAMING_NOT_SUPPORTED`) immediately, before the stream opens; use `run()` instead for those. Once a stream *has* opened, every other failure (quota exceeded, provider error) arrives as an in-band `{type:'error'}` event, not a thrown error — always check `event.type` in your loop, not just try/catch. Neither method defaults `domain` sensibly if you omit both `domain` and `pack` — it falls back to `'hiring'`, a historical default carried over from the API itself — pass one explicitly.
+> **Streaming works for built-in packs and custom-domain intents.** A custom-domain stream sends a `{type:'sources'}` event before the first token when retrieval ran, and its `done` event carries `structured`, `confidence`, `blocked` and `stream_mode`. If the intent's guardrail policy needs the whole answer before release (grounding block, structured-output retry), the answer arrives as one `token` event with `done.stream_mode === 'buffered'`. Pre-flight rejections (feature not enabled, quota) throw a `LiyaEngineAPIError` before any event; once a stream *has* opened, every other failure arrives as an in-band `{type:'error'}` event, not a thrown error — always check `event.type` in your loop, not just try/catch. Neither method defaults `domain` sensibly if you omit both `domain` and `pack` — it falls back to `'hiring'`, a historical default carried over from the API itself — pass one explicitly.
 
 ## Collections
 

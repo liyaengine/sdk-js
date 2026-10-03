@@ -123,8 +123,17 @@ const server = setupServer(
     if (!body.intent) {
       return HttpResponse.json({ success: false, error: { code: 'INVALID_INPUT', message: 'Missing required field: intent' } }, { status: 400 });
     }
-    if (body.domain && body.domain !== 'chat' && body.domain !== 'hiring') {
-      return HttpResponse.json({ success: false, error: { code: 'STREAMING_NOT_SUPPORTED', message: 'Streaming is only supported for built-in packs today.' } }, { status: 400 });
+    if (body.domain === 'locked-domain') {
+      return HttpResponse.json({ success: false, error: { code: 'FEATURE_NOT_ENABLED', message: 'Custom domain packs are not available on your current plan.' } }, { status: 403 });
+    }
+    if (body.domain === 'legal-ops') {
+      const customFrames = [
+        { type: 'sources', sources: [{ doc: 'playbook', relevance: 0.81 }] },
+        { type: 'token', delta: '{"overall_risk":' },
+        { type: 'token', delta: '"high"}' },
+        { type: 'done', session_id: 'sess_4', latency_ms: 900, input_tokens: 400, output_tokens: 9, cost_usd: 0.002, served_by: 'platform', stream_mode: 'live', structured: { overall_risk: 'high' }, confidence: 0.8 },
+      ];
+      return new HttpResponse(customFrames.map(f => `data: ${JSON.stringify(f)}\n\n`).join(''), { headers: { 'Content-Type': 'text/event-stream' } });
     }
     const frames = [
       { type: 'token', delta: 'Refunds ' },
@@ -306,15 +315,26 @@ describe('intents.stream', () => {
     ]);
   });
 
-  it('throws a typed LiyaEngineAPIError for a pre-flight rejection (custom domain), without yielding any events', async () => {
+  it('streams a custom-domain intent: sources, tokens, then done with structured output', async () => {
+    const events = [];
+    for await (const event of client().intents.stream({ domain: 'legal-ops', intent: 'review-contract', message: 'Review this NDA' })) {
+      events.push(event);
+    }
+    expect(events.map(e => e.type)).toEqual(['sources', 'token', 'token', 'done']);
+    const done = events[3];
+    expect(done.type === 'done' && done.structured).toEqual({ overall_risk: 'high' });
+    expect(done.type === 'done' && done.stream_mode).toBe('live');
+  });
+
+  it('throws a typed LiyaEngineAPIError for a pre-flight rejection, without yielding any events', async () => {
     const events = [];
     await expect(async () => {
       for (;;) {
-        const { value, done } = await client().intents.stream({ domain: 'legal-ops', intent: 'review-contract' }).next();
+        const { value, done } = await client().intents.stream({ domain: 'locked-domain', intent: 'anything' }).next();
         if (done) break;
         events.push(value);
       }
-    }).rejects.toMatchObject({ name: 'LiyaEngineAPIError', code: 'STREAMING_NOT_SUPPORTED', status: 400 });
+    }).rejects.toMatchObject({ name: 'LiyaEngineAPIError', code: 'FEATURE_NOT_ENABLED', status: 403 });
     expect(events).toHaveLength(0);
   });
 });
