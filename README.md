@@ -193,6 +193,20 @@ await client.documents.jobs.cancel(jobId);
 
 > Cancellation is cooperative (checked between page fetches / chunk embeds), not instant, and there is no crash-recovery sweep — if the process running a job restarts mid-run, the job is left "running" indefinitely rather than auto-retried. Poll `get(jobId)` for terminal status; don't assume `cancel()` stops it immediately.
 
+### Read a file without storing it
+
+```ts
+import { readFile } from 'node:fs/promises';
+
+// Same parser as document uploads; images and scanned PDF pages are
+// transcribed through your model routing on paid plans. Nothing is stored.
+const parsed = await client.files.parse({
+  fileName: 'acord-125.pdf',
+  fileBase64: (await readFile('acord-125.pdf')).toString('base64'),
+});
+// parsed.text, parsed.pages, parsed.warnings, parsed.transcribed_pages
+```
+
 ### Flagged chunks
 
 A chunk that accumulates enough human corrections (a support agent repeatedly overriding an AI answer that cited it) gets flagged for review — content worth updating or removing. Read/resolve only; whatever caused the flag is product-internal logic with no SDK surface.
@@ -269,6 +283,21 @@ for await (const event of client.workflows.runStream(workflow.workflow_key, { in
 ```
 
 > `deploy()` and `rotateWebhookSecret()` return the plaintext webhook secret exactly once. Store it immediately — subsequent reads (`get`, `list`) only ever expose `trigger_config.has_secret`.
+
+### Files in a run
+
+```ts
+// Up to 10 files, 18 MB per run. The API reads each one before the run
+// starts and adds attachment_texts and attachments_text to the run input,
+// so an intent step can map {{trigger.attachments_text}}. The bytes are
+// never stored.
+await client.workflows.run('submission-triage', {
+  input: {
+    email_text: 'Please quote the attached risk.',
+    attachments: [{ file_name: 'acord-125.pdf', file_base64: pdfBase64 }],
+  },
+});
+```
 
 ### Scheduled and event triggers
 

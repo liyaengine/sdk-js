@@ -5,6 +5,7 @@ import { WorkflowsResource } from './resources/workflows.js';
 import { EvaluationsResource } from './resources/evaluations.js';
 import { DomainsResource, IntentsResource } from './resources/domains.js';
 import { DocumentsResource } from './resources/documents.js';
+import { FilesResource } from './resources/files.js';
 import { GuardrailPoliciesResource } from './resources/guardrailPolicies.js';
 import { PromptsResource } from './resources/prompts.js';
 
@@ -31,6 +32,7 @@ export class LiyaEngine {
   readonly domains: DomainsResource;
   readonly intents: IntentsResource;
   readonly documents: DocumentsResource;
+  readonly files: FilesResource;
   readonly guardrailPolicies: GuardrailPoliciesResource;
   readonly prompts: PromptsResource;
 
@@ -52,6 +54,7 @@ export class LiyaEngine {
     this.domains = new DomainsResource(http);
     this.intents = new IntentsResource(http);
     this.documents = new DocumentsResource(http);
+    this.files = new FilesResource(http);
     this.guardrailPolicies = new GuardrailPoliciesResource(http);
     this.prompts = new PromptsResource(http);
   }

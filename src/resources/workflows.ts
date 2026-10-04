@@ -86,8 +86,21 @@ export interface RotateWebhookSecretResult {
   previous_secret_valid_until: string | null;
 }
 
+/**
+ * A file for a workflow run, sent in input.attachments. The API reads it
+ * before the run starts (transcribing scans and images on paid plans) and
+ * adds attachment_texts and attachments_text to the run input, so steps
+ * can map {{trigger.attachments_text}}. Up to 10 files, 18 MB per run.
+ */
+export interface WorkflowAttachment {
+  file_name: string;
+  /** Base64 content; a data: URL is accepted. */
+  file_base64: string;
+}
+
 export interface RunWorkflowInput {
-  input?: Record<string, unknown>;
+  /** Files go in input.attachments as WorkflowAttachment entries. */
+  input?: Record<string, unknown> & { attachments?: Array<WorkflowAttachment | Record<string, unknown>> };
   /** Resume a previously paused (needs_input) run. Omit to start fresh. */
   conversation_id?: string;
 }

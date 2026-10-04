@@ -39,6 +39,7 @@ export type {
   DeployResult,
   RotateWebhookSecretResult,
   RunWorkflowInput,
+  WorkflowAttachment,
   WorkflowRunResult,
   WorkflowStepTrace,
   WorkflowRunStreamEvent,
@@ -107,6 +108,7 @@ export type {
   ListIngestionJobsInput,
   IngestionJobsPage,
 } from './resources/documents.js';
+export type { ParseFileInput, ParsedFile, ParsedFileFormat } from './resources/files.js';
 export type {
   RunPack,
   RunIntentInput,
