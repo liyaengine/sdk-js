@@ -18,6 +18,11 @@ export interface RunIntentInput {
   /** Product-facing alias for domain (e.g. 'enterprise-chat' resolves to the 'chat' domain). Wins over `domain` if both are set. */
   pack?: RunPack;
   intent: string;
+  /**
+   * The intent's input fields. With an API key, `input.user_id` is required: any
+   * string that identifies your end user (for example the id from your own system).
+   * A call without it is rejected with `INVALID_INPUT`. `input.user.id` also works.
+   */
   input?: Record<string, unknown>;
   /** Shorthand for input.message. */
   message?: string;
