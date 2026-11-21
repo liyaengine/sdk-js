@@ -35,6 +35,11 @@ export interface UploadDocumentInput {
   category?: string;
   /** Every id must belong to this tenant, or the whole request is rejected. */
   collectionIds?: string[];
+  /**
+   * Restrict the document to these groups (visible only to end users who hold at least
+   * one). Omitted or `null` = unrestricted. An empty array is rejected.
+   */
+  accessGroups?: string[] | null;
 }
 
 export interface PushDocumentInput {
@@ -47,6 +52,11 @@ export interface PushDocumentInput {
   sourceId?: string;
   category?: string;
   collectionIds?: string[];
+  /**
+   * As on upload. Omitted keeps the label a re-pushed document already has, so a
+   * re-sync never makes a restricted document public; `null` makes it unrestricted.
+   */
+  accessGroups?: string[] | null;
 }
 
 export interface PushDocumentResult {
@@ -113,6 +123,55 @@ export interface FlaggedChunk {
   correction_count: number;
   flagged_at: string | null;
   created_at: string;
+}
+
+/** One thing a person said after the assistant answered from a flagged passage. Conversation text has personal details removed. */
+export interface FlaggedChunkCorrection {
+  conversation_id: string;
+  /** What the customer asked; null when it could not be found. */
+  question: string | null;
+  assistant_reply: string;
+  staff_reply: string;
+  at: string;
+}
+
+/**
+ * A flagged passage and the corrections behind it (`documents.getFlaggedChunk`). Only a count is stored per passage, so the corrections are
+ * rebuilt from the conversations that retrieved it: there can be fewer than `correction_count`. A flag is a suspicion, not proof, because a
+ * correction counts against every passage retrieved for that reply.
+ */
+export interface FlaggedChunkDetail {
+  chunk: { id: string; source_type: string; source_id: string; chunk_index: number; content_text: string; document_name: string | null; correction_count: number; flagged_at: string | null };
+  corrections: FlaggedChunkCorrection[];
+}
+
+/** One checked edit to a flagged passage. `before` is an exact quote of the passage (null: text added at the end); `start`/`end` locate it. */
+export interface ChunkRewriteEdit {
+  id: string;
+  before: string | null;
+  after: string;
+  /** The staff replies (C1, C2…) that support it. */
+  sources: string[];
+  reason: string;
+  start: number | null;
+  end: number | null;
+}
+
+/** Checked edits that make a flagged passage agree with what staff said (`documents.draftFlaggedChunkRewrite`). Nothing is saved. */
+export interface ChunkRewriteDraft {
+  chunk_id: string;
+  original: string;
+  /** The passage with every kept edit applied. */
+  revised_text: string;
+  edits: ChunkRewriteEdit[];
+  /** Why no edit was made, or what the staff replies leave open. */
+  unclear: string[];
+  /** Edits the model proposed that were dropped: not an exact quote of the passage, or citing a reply that does not say it. */
+  dropped_unsupported: number;
+  corrections: Array<{ id: string; question: string | null; assistant_reply: string; staff_reply: string }>;
+  /** `NO_CORRECTIONS`: no staff reply could be found, no model was called. `NO_CHANGE`: the replies show no error in this passage. */
+  reason: 'NO_CORRECTIONS' | 'NO_CHANGE' | null;
+  usage: { tokens: number; cost: number; served_by: 'platform' | 'byok' } | null;
 }
 
 export interface ListIngestionJobsInput {
@@ -215,6 +274,17 @@ export class DocumentsResource {
   }
 
   /**
+   * Change who can see a document without re-embedding it. `null` makes it
+   * unrestricted; otherwise an array of groups. Takes effect for every chunk at once.
+   */
+  async setAccess(id: string, accessGroups: string[] | null): Promise<{ id: string; access_groups: string[] | null; chunks_updated: number }> {
+    return this.http.patch<{ id: string; access_groups: string[] | null; chunks_updated: number }>(
+      `/v1/documents/${encodeURIComponent(id)}`,
+      { accessGroups },
+    );
+  }
+
+  /**
    * Read/resolve only — what actually flags a chunk (repeated human
    * corrections on a support ticket or conversation) is product-internal
    * logic with no SDK surface. This is the generic, tenant-wide half: any
@@ -223,6 +293,22 @@ export class DocumentsResource {
   async listFlaggedChunks(): Promise<FlaggedChunk[]> {
     const { chunks } = await this.http.get<{ chunks: FlaggedChunk[]; total: number }>('/v1/documents/flagged-chunks');
     return chunks;
+  }
+
+  /** A flagged passage in full, with what the customer asked, what the assistant said and what a person said after. Throws 404 `FLAGGED_CHUNK_NOT_FOUND` when it is not flagged. */
+  getFlaggedChunk(id: string): Promise<FlaggedChunkDetail> {
+    return this.http.get<FlaggedChunkDetail>(`/v1/documents/flagged-chunks/${encodeURIComponent(id)}`);
+  }
+
+  /**
+   * Checked edits that make the passage agree with what staff said. Each edit quotes the passage word for word and is kept only if a staff reply it
+   * cites says it; numbers must come from a cited reply or the text replaced. Calls a model and is metered, so it is never retried. Nothing is saved:
+   * a passage cannot be edited in place, so apply `revised_text` in the source document, then `resolveFlaggedChunk`. Throws 429 `QUOTA_EXCEEDED`
+   * or 502 `DRAFT_UNAVAILABLE`.
+   */
+  async draftFlaggedChunkRewrite(id: string): Promise<ChunkRewriteDraft> {
+    const { draft } = await this.http.postLongRunning<{ draft: ChunkRewriteDraft }>(`/v1/documents/flagged-chunks/${encodeURIComponent(id)}/draft-rewrite`, {}, 120_000);
+    return draft;
   }
 
   /** Clears the flag and resets the correction count to 0. Does not edit or delete the chunk's content — resolving is an acknowledgement, not a fix. */

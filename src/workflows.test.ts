@@ -20,7 +20,34 @@ const fixtureWorkflow = {
   steps: [],
 };
 
+let lastWfRegression: { url: string; method: string; body: unknown } | undefined;
 const server = setupServer(
+  // Before /v1/workflows/:workflowIdOrKey, which would take "regressions" for a workflow key.
+  http.get(`${BASE_URL}/v1/workflows/regressions/decided`, ({ request }) => {
+    lastWfRegression = { url: request.url, method: 'GET', body: null };
+    return HttpResponse.json({ success: true, data: { decisions: [{ id: 'd1', kind: 'rollback', fingerprint: 'rollback:workflow:w1:4:3', resource_type: 'workflow', resource_id: 'w1', resource_name: 'KYC review', title: 'Roll KYC review back to version 3', decision: 'staged', reason: null, evidence: {}, from_version: 4, to_version: 3, decided_by_label: 'Lee', decided_at: '2026-11-14T10:00:00.000Z', outcome: null }] } });
+  }),
+  http.post(`${BASE_URL}/v1/workflows/regressions/:id/stage`, ({ request }) => {
+    lastWfRegression = { url: request.url, method: 'POST', body: null };
+    return HttpResponse.json({ success: true, data: { staged_version: 3, staged_as_draft: true, decision_id: 'd9', recorded: true } });
+  }),
+  http.post(`${BASE_URL}/v1/workflows/regressions/:id/snooze`, async ({ request }) => {
+    lastWfRegression = { url: request.url, method: 'POST', body: await request.json() };
+    return HttpResponse.json({ success: true, data: { decision_id: 'd11', snoozed_until: '2026-12-05T00:00:00.000Z' } });
+  }),
+  http.post(`${BASE_URL}/v1/workflows/regressions/:id/dismiss`, async ({ request }) => {
+    lastWfRegression = { url: request.url, method: 'POST', body: await request.json() };
+    return HttpResponse.json({ success: true, data: { decision_id: 'd10' } });
+  }),
+  http.get(`${BASE_URL}/v1/workflows/regressions`, ({ request }) => {
+    lastWfRegression = { url: request.url, method: 'GET', body: null };
+    return HttpResponse.json({ success: true, data: { window_days: 30, min_version_runs: 20, min_gap_points: 10, regressions: [{
+      id: 'rollback:workflow:w1:4:3', workflow_id: 'w1', workflow_key: 'kyc', workflow_name: 'KYC review', gap_points: 17.9,
+      current: { version: 4, runs: 120, failed: 25, failure_rate: 20.8, first_run: '2026-11-16T00:00:00.000Z', last_run: '2026-11-18T00:00:00.000Z' },
+      previous: { version: 3, runs: 70, failed: 2, failure_rate: 2.9, first_run: '2026-11-08T00:00:00.000Z', last_run: '2026-11-15T00:00:00.000Z' },
+      changes: [{ field: 'workflow', label: '1 step added', before: '', after: '' }], top_failure: { signature: 'http #', runs: 22 }, has_draft: true,
+    }] } });
+  }),
   http.get(`${BASE_URL}/v1/workflows`, () =>
     HttpResponse.json({ success: true, data: [{ ...fixtureWorkflow, status: 'active', is_active: true, endpoint: '/v1/workflows/lead-intake/run', method: 'POST', inputSchema: {} }] }),
   ),
@@ -211,5 +238,28 @@ describe('workflows.runStream', () => {
       }
     }).rejects.toMatchObject({ name: 'LiyaEngineAPIError', code: 'WORKFLOW_NOT_FOUND', status: 404 });
     expect(events).toHaveLength(0);
+  });
+});
+
+describe('workflows.regressions', () => {
+  const client = () => new LiyaEngine({ apiKey: 'liya_test', baseUrl: BASE_URL });
+  it('reads roll-back proposals for workflows and maps them to camelCase', async () => {
+    const out = await client().workflows.regressions({ days: 60 });
+    expect(new URL(lastWfRegression!.url).searchParams.get('days')).toBe('60');
+    expect(out).toMatchObject({ windowDays: 30, minVersionRuns: 20, minGapPoints: 10 });
+    expect(out.regressions[0]).toMatchObject({ workflowKey: 'kyc', workflowName: 'KYC review', gapPoints: 17.9, hasDraft: true, topFailure: { runs: 22 } });
+    expect(out.regressions[0].current).toMatchObject({ version: 4, failureRate: 20.8 });
+  });
+
+  it('stages, dismisses and lists decisions', async () => {
+    const c = client();
+    expect(await c.workflows.stageRegression('rollback:workflow:w1:4:3')).toEqual({ stagedVersion: 3, stagedAsDraft: true, decisionId: 'd9', recorded: true });
+    expect(await c.workflows.dismissRegression('rollback:workflow:w1:4:3', 'planned')).toEqual({ decisionId: 'd10' });
+    expect(lastWfRegression?.body).toEqual({ reason: 'planned' });
+    expect(await c.workflows.snoozeRegression('rollback:workflow:w1:4:3', { days: 30 })).toEqual({ decisionId: 'd11', snoozedUntil: '2026-12-05T00:00:00.000Z' });
+    expect(lastWfRegression?.body).toEqual({ days: 30 });
+    const d = await c.workflows.regressionDecisions({ limit: 5 });
+    expect(new URL(lastWfRegression!.url).searchParams.get('limit')).toBe('5');
+    expect(d[0]).toMatchObject({ resourceType: 'workflow', resourceId: 'w1', decision: 'staged' });
   });
 });

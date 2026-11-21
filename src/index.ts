@@ -23,7 +23,15 @@ export type {
   AgentStep,
   AgentRunStreamEvent,
   AgentRunSummary,
+  AgentRegression,
+  AgentRegressions,
   AgentSession,
+  RegressionDecision,
+  AgentLimitProposal,
+  AgentLimitProposals,
+  AgentLimitNotProposed,
+  RegressionOutcome,
+  VersionSide,
   Pagination,
   EffectiveAgentRuntimeConfig,
   EffectiveConfigValue,
@@ -50,6 +58,8 @@ export type {
   DecideApprovalResult,
   WorkflowTriggerCatalog,
   WorkflowRunSummary,
+  WorkflowRegression,
+  WorkflowRegressions,
   ListOptions,
 } from './resources/workflows.js';
 export type {
@@ -107,10 +117,16 @@ export type {
   CreateFileIngestionJobInput,
   ListIngestionJobsInput,
   IngestionJobsPage,
+  FlaggedChunk,
+  FlaggedChunkCorrection,
+  FlaggedChunkDetail,
+  ChunkRewriteEdit,
+  ChunkRewriteDraft,
 } from './resources/documents.js';
 export type { ParseFileInput, ParsedFile, ParsedFileFormat } from './resources/files.js';
 export type {
   RunPack,
+  AccessContext,
   RunIntentInput,
   RunIntentResult,
   RunMeta,
@@ -153,3 +169,36 @@ export type {
   ListPromptsFilter,
   PublishPromptResult,
 } from './resources/prompts.js';
+export type {
+  TraceKind,
+  TraceIssueCategory,
+  TraceSortKey,
+  TraceContentAccess,
+  TraceParentRef,
+  TraceSummary,
+  ListTracesInput,
+  TracesPage,
+  TraceIssue,
+  FailureCluster,
+  FailureClusters,
+  TraceCaseDraft,
+  TraceCaseDraftDataset,
+  TraceRetrievedChunk,
+  Trace,
+  TraceStatsInput,
+  TraceLatency,
+  TraceStats,
+} from './resources/traces.js';
+
+export type {
+  KnowledgeGap,
+  KnowledgeGapList,
+  ListGapsInput,
+  GapDraftSource,
+  GapArticleDraft,
+  DraftArticleInput,
+  GapCoverage,
+  GapCoverageResult,
+} from './resources/gaps.js';
+export type { MemoryOutcomes, NoteOutcome, NoteVerdict } from './resources/memory.js';
+export type { ReportCorrectionInput, ReportedPassage, CorrectionResult } from './resources/corrections.js';

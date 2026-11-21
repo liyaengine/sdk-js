@@ -1,4 +1,5 @@
 import type { HttpClient } from '../http.js';
+import type { AccessContext } from './run.js';
 
 export type ChunkingStrategy = 'fixed' | 'semantic' | 'sliding_window';
 export type CollectionVisibility = 'workspace' | 'restricted';
@@ -90,6 +91,12 @@ export interface QueryCollectionsInput {
   collection_ids?: string[];
   /** 1-20, default 5. */
   top_k?: number;
+  /**
+   * Restrict results to what this end user may see: unrestricted documents plus
+   * those restricted to one of these groups. Omitted = no restriction (you are
+   * the trusted caller). Sent as `{ groups: [] }` = unrestricted documents only.
+   */
+  access?: AccessContext;
 }
 
 export interface QueryCollectionsResult {

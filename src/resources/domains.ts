@@ -1,5 +1,5 @@
 import type { HttpClient } from '../http.js';
-import type { RunIntentInput, RunIntentResult, RunStreamEvent } from './run.js';
+import type { RunIntentInput, RunIntentResult, RunStreamEvent, AccessContext } from './run.js';
 import { translateRunInput } from './run.js';
 import { DomainToolsResource } from './domainTools.js';
 
@@ -74,6 +74,11 @@ export interface UpdateDomainInput {
   /** Pass null to explicitly detach an existing binding and keep the current text as-is. */
   prompt_binding?: PromptBinding | null;
   retrieval_scope?: 'domain_only' | 'domain_plus_global' | 'global_only';
+  /**
+   * `enforce` makes retrieval honour each request's `access` groups (a request with
+   * none sees unrestricted documents only). `off` (default) ignores them.
+   */
+  retrieval_access?: 'off' | 'enforce';
   context_enrichment_webhook_url?: string;
   status?: 'draft' | 'active' | 'archived';
 }
@@ -199,6 +204,8 @@ export interface QueryDomainInput {
   query: string;
   /** Max results to return. */
   top_k?: number;
+  /** Retrieval access context; applied when the domain's `retrieval_access` is `enforce`. */
+  access?: AccessContext;
 }
 
 export interface QueryDomainResult {
@@ -384,6 +391,7 @@ export class DomainsResource {
       ...(input.system_prompt !== undefined && { systemPrompt: input.system_prompt }),
       ...(input.prompt_binding !== undefined && { promptBinding: input.prompt_binding }),
       ...(input.retrieval_scope !== undefined && { retrievalScope: input.retrieval_scope }),
+      ...(input.retrieval_access !== undefined && { retrievalAccess: input.retrieval_access }),
       ...(input.context_enrichment_webhook_url !== undefined && { contextEnrichmentWebhookUrl: input.context_enrichment_webhook_url }),
       ...(input.status !== undefined && { status: input.status }),
     });

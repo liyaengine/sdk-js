@@ -7,6 +7,18 @@
 
 export type RunPack = 'enterprise-chat' | 'hiring' | 'fintech' | 'healthcare' | 'ehs' | 'compliance' | (string & {});
 
+/**
+ * Who the end user is, for retrieval access control: the groups they belong to
+ * in your system (`hr`, `region:emea`, `plan:gold`). On a domain with retrieval
+ * access set to `enforce`, retrieval returns unrestricted documents plus those
+ * restricted to a group listed here. Omitted or empty means unrestricted
+ * documents only. Set by your server, never from end-user input.
+ */
+export interface AccessContext {
+  /** Up to 50 groups, each a non-empty string of at most 64 characters. */
+  groups: string[];
+}
+
 export interface RunIntentInput {
   /**
    * A custom domain_key, or a built-in pack's domain (chat, hiring,
@@ -31,6 +43,8 @@ export interface RunIntentInput {
   guardrails?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   preferences?: Record<string, unknown>;
+  /** Retrieval access context for this end user. See AccessContext. */
+  access?: AccessContext;
 }
 
 export interface RunMeta {
@@ -134,5 +148,6 @@ export function translateRunInput(input: RunIntentInput): Record<string, unknown
     ...(input.guardrails !== undefined && { guardrails: input.guardrails }),
     ...(input.metadata !== undefined && { metadata: input.metadata }),
     ...(input.preferences !== undefined && { preferences: input.preferences }),
+    ...(input.access !== undefined && { access: input.access }),
   };
 }

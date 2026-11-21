@@ -8,6 +8,10 @@ import { DocumentsResource } from './resources/documents.js';
 import { FilesResource } from './resources/files.js';
 import { GuardrailPoliciesResource } from './resources/guardrailPolicies.js';
 import { PromptsResource } from './resources/prompts.js';
+import { TracesResource } from './resources/traces.js';
+import { GapsResource } from './resources/gaps.js';
+import { CorrectionsResource } from './resources/corrections.js';
+import { MemoryResource } from './resources/memory.js';
 
 export interface LiyaEngineOptions {
   /** Your tenant's API key (`liya_...`). Required. */
@@ -35,6 +39,10 @@ export class LiyaEngine {
   readonly files: FilesResource;
   readonly guardrailPolicies: GuardrailPoliciesResource;
   readonly prompts: PromptsResource;
+  readonly traces: TracesResource;
+  readonly gaps: GapsResource;
+  readonly corrections: CorrectionsResource;
+  readonly memory: MemoryResource;
 
   constructor(options: LiyaEngineOptions) {
     if (!options.apiKey) {
@@ -57,5 +65,9 @@ export class LiyaEngine {
     this.files = new FilesResource(http);
     this.guardrailPolicies = new GuardrailPoliciesResource(http);
     this.prompts = new PromptsResource(http);
+    this.traces = new TracesResource(http);
+    this.gaps = new GapsResource(http);
+    this.corrections = new CorrectionsResource(http);
+    this.memory = new MemoryResource(http);
   }
 }

@@ -112,6 +112,13 @@ export class HttpClient {
   get<T>(path: string): Promise<T> {
     return this.request<T>('GET', path);
   }
+  /**
+   * `GET {path}` returning the parsed body as-is, for the rare read whose envelope carries top-level siblings
+   * beyond `{success, data}` — today `GET /v1/traces`, whose `pagination` and `sort` sit beside `data`.
+   */
+  getEnvelope<T>(path: string): Promise<T> {
+    return this.requestEnvelope<T>('GET', path);
+  }
   post<T>(path: string, body?: unknown): Promise<T> {
     return this.request<T>('POST', path, body);
   }

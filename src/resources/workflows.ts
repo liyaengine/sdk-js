@@ -1,4 +1,5 @@
 import type { HttpClient } from '../http.js';
+import { mapRegressionDecision, mapVersionSide, type RegressionDecision, type VersionSide } from './agents.js';
 
 export type WorkflowStatus = 'draft' | 'active' | 'inactive' | 'error';
 export type StepType = 'trigger' | 'action' | 'condition' | 'switch' | 'delay' | 'loop' | 'ai_intent' | 'ai_agent' | 'approval' | 'end';
@@ -256,11 +257,76 @@ export class WorkflowApprovalsResource {
   }
 }
 
+/** A roll-back proposal: the live version of a workflow fails clearly more often than the version before it. A lead, never proof. */
+export interface WorkflowRegression {
+  id: string;
+  workflowId: string;
+  workflowKey: string;
+  workflowName: string;
+  current: VersionSide;
+  previous: VersionSide;
+  gapPoints: number;
+  /** What differs between the two versions, in words (`label`). Rolling back undoes all of it. `before` and `after` are empty for a workflow. */
+  changes: Array<{ field: string; label: string; before: string; after: string }>;
+  topFailure: { signature: string; runs: number } | null;
+  /** True when staging the older version would replace an existing draft. */
+  hasDraft: boolean;
+}
+
+export interface WorkflowRegressions {
+  windowDays: number;
+  minVersionRuns: number;
+  minGapPoints: number;
+  regressions: WorkflowRegression[];
+}
+
 export class WorkflowsResource {
   readonly approvals: WorkflowApprovalsResource;
 
   constructor(private readonly http: HttpClient) {
     this.approvals = new WorkflowApprovalsResource(http);
+  }
+
+  /**
+   * Workflows whose live version fails clearly more often than the version before it, counted from runs. No model is called and nothing is
+   * billed. Only runs that completed or failed count. Nothing is applied. `days` is 7 to 90 (default 30).
+   */
+  async regressions(input: { days?: number } = {}): Promise<WorkflowRegressions> {
+    const d = await this.http.get<Record<string, any>>(`/v1/workflows/regressions${input.days === undefined ? '' : `?days=${encodeURIComponent(String(input.days))}`}`);
+    return {
+      windowDays: d.window_days, minVersionRuns: d.min_version_runs, minGapPoints: d.min_gap_points,
+      regressions: (d.regressions as Array<Record<string, any>>).map((r) => ({
+        id: r.id, workflowId: r.workflow_id, workflowKey: r.workflow_key, workflowName: r.workflow_name, current: mapVersionSide(r.current), previous: mapVersionSide(r.previous),
+        gapPoints: r.gap_points, changes: r.changes, topFailure: r.top_failure, hasDraft: r.has_draft,
+      })),
+    };
+  }
+
+  /**
+   * Stage a workflow roll-back: the older version's steps become the workflow's DRAFT (not the live restore), so nothing goes live until the
+   * workflow is deployed. Replaces an existing draft. Calls no model. Throws a 409 `PROPOSAL_NOT_OPEN` when the proposal is no longer open.
+   */
+  async stageRegression(id: string): Promise<{ stagedVersion: number; stagedAsDraft: boolean; decisionId: string | null; recorded: boolean }> {
+    const d = await this.http.post<Record<string, any>>(`/v1/workflows/regressions/${encodeURIComponent(id)}/stage`, {});
+    return { stagedVersion: d.staged_version, stagedAsDraft: d.staged_as_draft, decisionId: d.decision_id, recorded: d.recorded };
+  }
+
+  /** Dismiss a workflow roll-back proposal. It stays hidden while the two versions are unchanged. `reason` is optional, at most 500 characters. */
+  async dismissRegression(id: string, reason?: string): Promise<{ decisionId: string }> {
+    const d = await this.http.post<Record<string, any>>(`/v1/workflows/regressions/${encodeURIComponent(id)}/dismiss`, reason === undefined ? {} : { reason });
+    return { decisionId: d.decision_id };
+  }
+
+  /** Snooze a workflow roll-back proposal for 7, 14 or 30 days. It comes back after that if it still qualifies. Changes nothing else. */
+  async snoozeRegression(id: string, input: { days: 7 | 14 | 30; reason?: string }): Promise<{ decisionId: string; snoozedUntil: string }> {
+    const d = await this.http.post<Record<string, any>>(`/v1/workflows/regressions/${encodeURIComponent(id)}/snooze`, { days: input.days, ...(input.reason !== undefined ? { reason: input.reason } : {}) });
+    return { decisionId: d.decision_id, snoozedUntil: d.snoozed_until };
+  }
+
+  /** Every roll-back decision, agents and workflows together, newest first (`resourceType` says which). `limit` is 1 to 200 (default 50). */
+  async regressionDecisions(input: { limit?: number } = {}): Promise<RegressionDecision[]> {
+    const d = await this.http.get<{ decisions: Array<Record<string, any>> }>(`/v1/workflows/regressions/decided${input.limit === undefined ? '' : `?limit=${encodeURIComponent(String(input.limit))}`}`);
+    return d.decisions.map(mapRegressionDecision);
   }
 
   /**
