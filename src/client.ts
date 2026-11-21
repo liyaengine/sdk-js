@@ -11,6 +11,7 @@ import { PromptsResource } from './resources/prompts.js';
 import { TracesResource } from './resources/traces.js';
 import { GapsResource } from './resources/gaps.js';
 import { CorrectionsResource } from './resources/corrections.js';
+import { HealingResource } from './resources/healing.js';
 import { MemoryResource } from './resources/memory.js';
 
 export interface LiyaEngineOptions {
@@ -42,6 +43,7 @@ export class LiyaEngine {
   readonly traces: TracesResource;
   readonly gaps: GapsResource;
   readonly corrections: CorrectionsResource;
+  readonly healing: HealingResource;
   readonly memory: MemoryResource;
 
   constructor(options: LiyaEngineOptions) {
@@ -68,6 +70,7 @@ export class LiyaEngine {
     this.traces = new TracesResource(http);
     this.gaps = new GapsResource(http);
     this.corrections = new CorrectionsResource(http);
+    this.healing = new HealingResource(http);
     this.memory = new MemoryResource(http);
   }
 }

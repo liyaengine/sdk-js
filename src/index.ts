@@ -202,3 +202,4 @@ export type {
 } from './resources/gaps.js';
 export type { MemoryOutcomes, NoteOutcome, NoteVerdict } from './resources/memory.js';
 export type { ReportCorrectionInput, ReportedPassage, CorrectionResult } from './resources/corrections.js';
+export type { HealingSettings, UpdateHealingSettingsInput, AnswerCheckSummary } from './resources/healing.js';
